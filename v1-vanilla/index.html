@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Debt Paydown Planner</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <noscript>
+      <p>
+        This app requires JavaScript. Please enable it in your browser to use
+        the planner.
+      </p>
+    </noscript>
+
+    <header>
+      <h1>Debt Paydown Planner</h1>
+      <p class="tagline">
+        Add your debts, set a monthly budget, get a payoff plan.
+      </p>
+    </header>
+
+    <main>
+      <section id="budget-section">
+        <h2>Monthly Budget</h2>
+        <div class="field">
+          <label for="budget-amount"
+            >Total you can put toward debt each month ($)</label
+          >
+          <input
+            type="number"
+            id="budget-amount"
+            name="amount"
+            inputmode="decimal"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+          />
+        </div>
+      </section>
+
+      <section id="summary-section">
+        <h2>Summary</h2>
+        <div id="summary-cards">
+          <div class="card">
+            <span class="card-label">Total Balance</span>
+            <span class="card-value" id="summary-balance">$0.00</span>
+          </div>
+          <div class="card">
+            <span class="card-label">Total Minimums</span>
+            <span class="card-value" id="summary-minimums">$0.00</span>
+          </div>
+          <div class="card">
+            <span class="card-label">Number of Debts</span>
+            <span class="card-value" id="summary-count">0</span>
+          </div>
+          <!-- Hidden until budget is set -->
+          <div class="card hidden" id="summary-payoff-card">
+            <span class="card-label">Months to Debt-Free</span>
+            <span class="card-value" id="summary-months">--</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="form-section">
+        <h2>Add a Debt</h2>
+        <form id="debt-form" autocomplete="off" novalidate>
+          <div class="field">
+            <label for="form-name">Name</label>
+            <input
+              type="text"
+              id="form-name"
+              name="name"
+              maxlength="40"
+              placeholder="Visa, Car Loan, Student Loan..."
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="form-balance">Balance ($)</label>
+            <input
+              type="number"
+              id="form-balance"
+              name="balance"
+              inputmode="decimal"
+              min="0.01"
+              step="0.01"
+              placeholder="5000.00"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="form-rate">Interest Rate (APR %)</label>
+            <input
+              type="number"
+              id="form-rate"
+              name="rate"
+              inputmode="decimal"
+              min="0"
+              step="0.01"
+              placeholder="19.99"
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="form-min-payment">Minimum Payment ($)</label>
+            <input
+              type="number"
+              id="form-min-payment"
+              name="minPayment"
+              inputmode="decimal"
+              min="0.01"
+              step="0.01"
+              placeholder="25.00"
+              required
+            />
+          </div>
+          <div class="buttons">
+            <button type="submit">Add Debt</button>
+            <button type="reset">Clear</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="list-section">
+        <h2>Your Debts</h2>
+        <p id="list-empty">No debts added yet.</p>
+        <ul id="debt-list"></ul>
+      </section>
+
+      <!-- Hidden until budget is set and at least one debt exists -->
+      <section id="schedule-section" class="hidden">
+        <h2>Payoff Schedule (Avalanche)</h2>
+        <div id="schedule-output"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
