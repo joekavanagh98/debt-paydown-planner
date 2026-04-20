@@ -61,4 +61,20 @@ inputs are bad or the budget is unrealistic. Return
 
 ## What could be better
 
-_(section kept for self-critique once v1 is working)_
+### Test coverage gaps
+
+- The "deterministic ordering" test only asserts two consecutive runs agree.
+  Both could be deterministically wrong. A stronger version would assert
+  *which* debt wins ties (input order, since `Array.prototype.sort` is
+  stable in modern engines). The current test still catches the common
+  bug (random tiebreaking), which is what matters for v1.
+- The "budget exactly matching minimums" test only checks month 1. It
+  doesn't verify steady state after some debts pay off and their
+  minimums start cascading. Not wrong, just narrower than it looks.
+- No test for cascade behavior when a debt pays off mid-schedule (the
+  rollover of unused minimum to the next target).
+- No test that the 600-month ceiling actually fires on a degenerate
+  input (e.g. user-supplied minimum below the interest accrual).
+- No test for negative or NaN inputs. Current code might crash rather
+  than fail gracefully. Validation at the UI boundary catches most of
+  this in practice, but the math function itself has no guard.
