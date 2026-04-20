@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Debt Paydown Planner &mdash; Tests</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 50rem;
+        margin: 0 auto;
+        padding: 1.5rem;
+        background: #f5f6f8;
+        color: #1b1f24;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      .test {
+        padding: 0.5rem 0.75rem;
+        margin: 0.25rem 0;
+        border-radius: 6px;
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.875rem;
+        white-space: pre-wrap;
+      }
+      .pass {
+        background: #d4edda;
+        color: #155724;
+      }
+      .fail {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .summary {
+        padding: 0.75rem 1rem;
+        margin-top: 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+      }
+      .summary.pass {
+        background: #28a745;
+        color: white;
+      }
+      .summary.fail {
+        background: #dc3545;
+        color: white;
+      }
+      #stubs {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Paydown math tests</h1>
+    <div id="results"></div>
+    <div id="summary"></div>
+
+    <!-- Minimal DOM stubs so app.js can wire up without throwing. Tests
+         call the pure functions directly and ignore these. -->
+    <div id="stubs" aria-hidden="true">
+      <form id="debt-form"></form>
+      <input id="budget-amount" />
+      <ul id="debt-list"></ul>
+      <p id="list-empty"></p>
+      <span id="summary-balance"></span>
+      <span id="summary-minimums"></span>
+      <span id="summary-count"></span>
+      <span id="summary-months"></span>
+      <div id="summary-payoff-card"></div>
+      <section id="schedule-section"></section>
+      <div id="schedule-output"></div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+      (function () {
+        const results = document.getElementById("results");
+        const summaryEl = document.getElementById("summary");
+        let passed = 0;
+        let failed = 0;
+
+        function assert(condition, message) {
+          if (!condition) throw new Error(message || "assertion failed");
+        }
+
+        function assertClose(actual, expected, tolerance, message) {
+          if (Math.abs(actual - expected) > tolerance) {
+            throw new Error(
+              `${message || "not close"}: expected ${expected}, got ${actual}`,
+            );
+          }
+        }
+
+        function test(name, fn) {
+          const row = document.createElement("div");
+          try {
+            fn();
+            row.className = "test pass";
+            row.textContent = `PASS  ${name}`;
+            console.log(`PASS  ${name}`);
+            passed++;
+          } catch (err) {
+            row.className = "test fail";
+            row.textContent = `FAIL  ${name}\n      ${err.message}`;
+            console.error(`FAIL  ${name}: ${err.message}`);
+            failed++;
+          }
+          results.appendChild(row);
+        }
+
+        test("empty debt array returns empty schedule, no crash", () => {
+          const result = avalanchePaydown([], 500);
+          assert(result.feasible === true, "should be feasible");
+          assert(Array.isArray(result.schedule), "schedule should be an array");
+          assert(
+            result.schedule.length === 0,
+            `expected empty schedule, got length ${result.schedule.length}`,
+          );
+        });
+
+        test("zero-interest debt does not divide by zero and pays off", () => {
+          const result = avalanchePaydown(
+            [{ name: "A", balance: 1000, rate: 0, minPayment: 100 }],
+            100,
+          );
+          assert(result.feasible, "should be feasible");
+          assert(
+            result.schedule.length === 10,
+            `expected 10 months for $1000 at 0% with $100/mo, got ${result.schedule.length}`,
+          );
+          const final = result.schedule[result.schedule.length - 1][0];
+          assertClose(final.balance, 0, 0.01, "final balance should be 0");
+        });
+
+        test("single debt: extra budget pays off faster than minimum-only", () => {
+          const debts = [
+            { name: "A", balance: 1000, rate: 12, minPayment: 50 },
+          ];
+          const minOnly = avalanchePaydown(debts, 50);
+          const extra = avalanchePaydown(debts, 200);
+          assert(minOnly.feasible && extra.feasible);
+          assert(
+            extra.schedule.length < minOnly.schedule.length,
+            `extra ($200) took ${extra.schedule.length} months, min-only ($50) took ${minOnly.schedule.length}`,
+          );
+        });
+
+        test("budget exactly matching minimums: no extra in month 1", () => {
+          const debts = [
+            { name: "A", balance: 1000, rate: 20, minPayment: 50 },
+            { name: "B", balance: 2000, rate: 10, minPayment: 100 },
+          ];
+          const result = avalanchePaydown(debts, 150);
+          assert(result.feasible);
+          for (const entry of result.schedule[0]) {
+            assert(
+              !entry.targeted,
+              `${entry.name} should not be targeted in month 1 when budget equals minimums`,
+            );
+          }
+        });
+
+        test("budget below sum of minimums flags infeasible", () => {
+          const debts = [
+            { name: "A", balance: 1000, rate: 20, minPayment: 50 },
+            { name: "B", balance: 2000, rate: 10, minPayment: 100 },
+          ];
+          const result = avalanchePaydown(debts, 100);
+          assert(result.feasible === false, "should be infeasible");
+          assert(
+            result.reason === "budgetBelowMinimums",
+            `unexpected reason: ${result.reason}`,
+          );
+          assertClose(result.requiredMinimum, 150, 0.01);
+          assertClose(result.shortfall, 50, 0.01);
+        });
+
+        test("two debts with the same rate: deterministic ordering", () => {
+          const debts = [
+            { name: "A", balance: 1000, rate: 15, minPayment: 50 },
+            { name: "B", balance: 2000, rate: 15, minPayment: 50 },
+          ];
+          const run1 = avalanchePaydown(debts, 300);
+          const run2 = avalanchePaydown(debts, 300);
+          assert(run1.feasible && run2.feasible);
+          const target1 = run1.schedule[0].find((e) => e.targeted)?.name;
+          const target2 = run2.schedule[0].find((e) => e.targeted)?.name;
+          assert(
+            target1 !== undefined,
+            "some debt should be targeted when extra is available",
+          );
+          assert(
+            target1 === target2,
+            `same inputs produced different targets: ${target1} vs ${target2}`,
+          );
+        });
+
+        test("very large numbers stay precise through full paydown", () => {
+          const debts = [
+            { name: "A", balance: 10_000_000, rate: 5, minPayment: 100_000 },
+          ];
+          const result = avalanchePaydown(debts, 200_000);
+          assert(result.feasible);
+          const final = result.schedule[result.schedule.length - 1][0];
+          assertClose(
+            final.balance,
+            0,
+            0.01,
+            "final balance should be 0 with no float drift",
+          );
+        });
+
+        test("calculateMinimumPayment: uses explicit minPayment when provided", () => {
+          const min = calculateMinimumPayment({
+            balance: 1000,
+            rate: 20,
+            minPayment: 30,
+          });
+          assertClose(min, 30, 0.01);
+        });
+
+        test("calculateMinimumPayment: fallback formula with $25 floor", () => {
+          // $1000 at 24% APR: interest $20/mo + 1% ($10) = $30 — above floor
+          const min = calculateMinimumPayment({
+            balance: 1000,
+            rate: 24,
+            minPayment: 0,
+          });
+          assertClose(min, 30, 0.01);
+          // $100 balance: interest + 1% = $3 — floored at $25
+          const floored = calculateMinimumPayment({
+            balance: 100,
+            rate: 24,
+            minPayment: 0,
+          });
+          assertClose(floored, 25, 0.01);
+        });
+
+        summaryEl.className = `summary ${failed === 0 ? "pass" : "fail"}`;
+        summaryEl.textContent = `${passed} passed, ${failed} failed`;
+        console.log(`\n${passed} passed, ${failed} failed`);
+      })();
+    </script>
+  </body>
+</html>
