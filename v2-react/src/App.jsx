@@ -1,13 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import BudgetInput from "./features/debts/BudgetInput";
 import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
 import Schedule from "./features/debts/Schedule";
 import Summary from "./features/debts/Summary";
+import { loadJSON, saveJSON } from "./utils/storage";
+
+const DEBTS_KEY = "dpp.debts";
+const BUDGET_KEY = "dpp.budget";
 
 function App() {
-  const [debts, setDebts] = useState([]);
-  const [budget, setBudget] = useState("");
+  const [debts, setDebts] = useState(() => loadJSON(DEBTS_KEY, []));
+  const [budget, setBudget] = useState(() => loadJSON(BUDGET_KEY, ""));
+
+  useEffect(() => {
+    saveJSON(DEBTS_KEY, debts);
+  }, [debts]);
+
+  useEffect(() => {
+    saveJSON(BUDGET_KEY, budget);
+  }, [budget]);
 
   const addDebt = (debt) => {
     const debtWithId = { ...debt, id: crypto.randomUUID() };
