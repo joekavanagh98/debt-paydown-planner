@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DebtForm from "./features/debts/DebtForm";
+import DebtList from "./features/debts/DebtList";
 
 function App() {
   const [debts, setDebts] = useState([]);
@@ -21,6 +22,7 @@ function App() {
         {debts.length} debts, budget: {budget || "(empty)"}
       </p>
       <DebtForm onAdd={addDebt} />
+      <DebtList debts={debts} onDelete={deleteDebt} />
     </main>
   );
 }
