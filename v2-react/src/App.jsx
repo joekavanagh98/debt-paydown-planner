@@ -2,6 +2,7 @@ import { useState } from "react";
 import BudgetInput from "./features/debts/BudgetInput";
 import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
+import Summary from "./features/debts/Summary";
 
 function App() {
   const [debts, setDebts] = useState([]);
@@ -19,6 +20,7 @@ function App() {
   return (
     <main>
       <h1>Debt Paydown Planner</h1>
+      <Summary debts={debts} />
       <BudgetInput value={budget} onChange={setBudget} />
       <DebtForm onAdd={addDebt} />
       <DebtList debts={debts} onDelete={deleteDebt} />
