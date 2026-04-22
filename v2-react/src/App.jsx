@@ -2,6 +2,7 @@ import { useState } from "react";
 import BudgetInput from "./features/debts/BudgetInput";
 import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
+import Schedule from "./features/debts/Schedule";
 import Summary from "./features/debts/Summary";
 
 function App() {
@@ -24,6 +25,7 @@ function App() {
       <BudgetInput value={budget} onChange={setBudget} />
       <DebtForm onAdd={addDebt} />
       <DebtList debts={debts} onDelete={deleteDebt} />
+      <Schedule debts={debts} budget={budget} />
     </main>
   );
 }
