@@ -3,7 +3,7 @@ import type { Debt, NewDebt } from "./types";
 import BudgetInput from "./features/debts/BudgetInput";
 import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
-import Schedule from "./features/debts/Schedule";
+import StrategyComparison from "./features/debts/StrategyComparison";
 import Summary from "./features/debts/Summary";
 import { loadJSON, saveJSON } from "./utils/storage";
 
@@ -51,7 +51,7 @@ function App() {
         <BudgetInput value={budget} onChange={setBudget} />
         <DebtForm onAdd={addDebt} />
         <DebtList debts={debts} onDelete={deleteDebt} />
-        <Schedule debts={debts} budget={budget} />
+        <StrategyComparison debts={debts} budget={budget} />
       </main>
     </div>
   );
