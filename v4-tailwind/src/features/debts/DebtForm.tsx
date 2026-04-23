@@ -57,75 +57,77 @@ function DebtForm({ onAdd }: DebtFormProps) {
       className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
     >
       <h2 className="text-base font-semibold text-slate-900">Add a debt</h2>
-      <div>
-        <label htmlFor="form-name" className={labelClass}>
-          Name
-        </label>
-        <input
-          type="text"
-          id="form-name"
-          name="name"
-          value={form.name}
-          onChange={handleChange}
-          maxLength={40}
-          placeholder="Visa, Car Loan, Student Loan..."
-          required
-          className={inputClass}
-        />
-      </div>
-      <div>
-        <label htmlFor="form-balance" className={labelClass}>
-          Balance ($)
-        </label>
-        <input
-          type="number"
-          id="form-balance"
-          name="balance"
-          value={form.balance}
-          onChange={handleChange}
-          inputMode="decimal"
-          min="0.01"
-          step="0.01"
-          placeholder="5000.00"
-          required
-          className={inputClass}
-        />
-      </div>
-      <div>
-        <label htmlFor="form-rate" className={labelClass}>
-          Interest Rate (APR %)
-        </label>
-        <input
-          type="number"
-          id="form-rate"
-          name="rate"
-          value={form.rate}
-          onChange={handleChange}
-          inputMode="decimal"
-          min="0"
-          step="0.01"
-          placeholder="19.99"
-          required
-          className={inputClass}
-        />
-      </div>
-      <div>
-        <label htmlFor="form-min-payment" className={labelClass}>
-          Minimum Payment ($)
-        </label>
-        <input
-          type="number"
-          id="form-min-payment"
-          name="minPayment"
-          value={form.minPayment}
-          onChange={handleChange}
-          inputMode="decimal"
-          min="0.01"
-          step="0.01"
-          placeholder="25.00"
-          required
-          className={inputClass}
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="form-name" className={labelClass}>
+            Name
+          </label>
+          <input
+            type="text"
+            id="form-name"
+            name="name"
+            value={form.name}
+            onChange={handleChange}
+            maxLength={40}
+            placeholder="Visa, Car Loan, Student Loan..."
+            required
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label htmlFor="form-balance" className={labelClass}>
+            Balance ($)
+          </label>
+          <input
+            type="number"
+            id="form-balance"
+            name="balance"
+            value={form.balance}
+            onChange={handleChange}
+            inputMode="decimal"
+            min="0.01"
+            step="0.01"
+            placeholder="5000.00"
+            required
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label htmlFor="form-rate" className={labelClass}>
+            Interest Rate (APR %)
+          </label>
+          <input
+            type="number"
+            id="form-rate"
+            name="rate"
+            value={form.rate}
+            onChange={handleChange}
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            placeholder="19.99"
+            required
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label htmlFor="form-min-payment" className={labelClass}>
+            Minimum Payment ($)
+          </label>
+          <input
+            type="number"
+            id="form-min-payment"
+            name="minPayment"
+            value={form.minPayment}
+            onChange={handleChange}
+            inputMode="decimal"
+            min="0.01"
+            step="0.01"
+            placeholder="25.00"
+            required
+            className={inputClass}
+          />
+        </div>
       </div>
       <div className="flex gap-3">
         <button

@@ -19,7 +19,7 @@ function Summary({ debts }: SummaryProps) {
   }, [debts]);
 
   return (
-    <section className="grid grid-cols-1 gap-3">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <SummaryCard label="Total Balance" value={formatMoney(totalBalance)} />
       <SummaryCard label="Total Minimum" value={formatMoney(totalMinimum)} />
       <SummaryCard label="Debts" value={String(debts.length)} />
