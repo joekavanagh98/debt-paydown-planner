@@ -19,20 +19,22 @@ function Summary({ debts }: SummaryProps) {
   }, [debts]);
 
   return (
-    <section className="summary">
-      <div className="summary-card">
-        <span className="summary-label">Total Balance</span>
-        <span className="summary-value">{formatMoney(totalBalance)}</span>
-      </div>
-      <div className="summary-card">
-        <span className="summary-label">Total Minimum</span>
-        <span className="summary-value">{formatMoney(totalMinimum)}</span>
-      </div>
-      <div className="summary-card">
-        <span className="summary-label">Debts</span>
-        <span className="summary-value">{debts.length}</span>
-      </div>
+    <section className="grid grid-cols-1 gap-3">
+      <SummaryCard label="Total Balance" value={formatMoney(totalBalance)} />
+      <SummaryCard label="Total Minimum" value={formatMoney(totalMinimum)} />
+      <SummaryCard label="Debts" value={String(debts.length)} />
     </section>
+  );
+}
+
+function SummaryCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className="mt-1 text-xl font-semibold text-slate-900">{value}</div>
+    </div>
   );
 }
 

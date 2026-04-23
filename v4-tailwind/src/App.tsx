@@ -36,14 +36,24 @@ function App() {
   };
 
   return (
-    <main>
-      <h1>Debt Paydown Planner</h1>
-      <Summary debts={debts} />
-      <BudgetInput value={budget} onChange={setBudget} />
-      <DebtForm onAdd={addDebt} />
-      <DebtList debts={debts} onDelete={deleteDebt} />
-      <Schedule debts={debts} budget={budget} />
-    </main>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <main className="mx-auto max-w-3xl px-4 py-8 space-y-6">
+        <header>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Debt Paydown Planner
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
+            List your debts and a monthly budget to see an avalanche payoff
+            plan.
+          </p>
+        </header>
+        <Summary debts={debts} />
+        <BudgetInput value={budget} onChange={setBudget} />
+        <DebtForm onAdd={addDebt} />
+        <DebtList debts={debts} onDelete={deleteDebt} />
+        <Schedule debts={debts} budget={budget} />
+      </main>
+    </div>
   );
 }
 

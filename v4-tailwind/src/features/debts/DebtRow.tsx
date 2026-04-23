@@ -9,23 +9,21 @@ interface DebtRowProps {
 
 function DebtRow({ debt, onDelete }: DebtRowProps) {
   return (
-    <li className="debt-item">
-      <div className="debt-info">
-        <span className="debt-name">{debt.name}</span>
-        <span className="debt-meta">
+    <li className="flex items-center justify-between gap-3 p-4">
+      <div className="min-w-0">
+        <div className="font-medium text-slate-900">{debt.name}</div>
+        <div className="mt-0.5 text-sm text-slate-500">
           {formatMoney(debt.balance)} · {debt.rate}% APR · min{" "}
           {formatMoney(calculateMinimumPayment(debt))}
-        </span>
+        </div>
       </div>
-      <div className="debt-actions">
-        <button
-          type="button"
-          className="btn-delete"
-          onClick={() => onDelete(debt.id)}
-        >
-          Delete
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => onDelete(debt.id)}
+        className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-200"
+      >
+        Delete
+      </button>
     </li>
   );
 }

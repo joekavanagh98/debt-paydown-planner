@@ -20,25 +20,15 @@ function Schedule({ debts, budget }: ScheduleProps) {
   if (!ready || result === null) return null;
 
   if (!result.feasible) {
-    if (result.reason === "budgetBelowMinimums") {
-      return (
-        <section className="schedule">
-          <h2>Payoff Plan</h2>
-          <p className="schedule-warning">
-            Budget too low. You need at least{" "}
-            {formatMoney(result.requiredMinimum)} per month to cover all minimum
-            payments.
-          </p>
-        </section>
-      );
-    }
+    const message =
+      result.reason === "budgetBelowMinimums"
+        ? `Budget too low. You need at least ${formatMoney(result.requiredMinimum)} per month to cover all minimum payments.`
+        : "Payoff would take more than 50 years at this budget. Try a higher budget.";
+
     return (
-      <section className="schedule">
-        <h2>Payoff Plan</h2>
-        <p className="schedule-warning">
-          Payoff would take more than 50 years at this budget. Try a higher
-          budget.
-        </p>
+      <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+        <h2 className="text-base font-semibold text-amber-900">Payoff Plan</h2>
+        <p className="mt-2 text-sm text-amber-800">{message}</p>
       </section>
     );
   }
@@ -61,16 +51,29 @@ function Schedule({ debts, budget }: ScheduleProps) {
   });
 
   return (
-    <section className="schedule">
-      <h2>Payoff Plan</h2>
-      <p>
-        Debt-free in <strong>{months}</strong> months. Total interest paid:{" "}
-        <strong>{formatMoney(totalInterest)}</strong>.
+    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="text-base font-semibold text-slate-900">Payoff Plan</h2>
+      <p className="mt-2 text-sm text-slate-600">
+        Debt-free in{" "}
+        <strong className="font-semibold text-slate-900">{months}</strong>{" "}
+        months. Total interest paid:{" "}
+        <strong className="font-semibold text-slate-900">
+          {formatMoney(totalInterest)}
+        </strong>
+        .
       </p>
-      <ul>
+      <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
         {debts.map((d) => (
-          <li key={d.id}>
-            {d.name} — paid off in month {payoffMonth[d.name] ?? "—"}
+          <li
+            key={d.id}
+            className="flex items-center justify-between py-2 text-sm"
+          >
+            <span className="text-slate-700">{d.name}</span>
+            <span className="text-slate-500">
+              {payoffMonth[d.name] !== undefined
+                ? `Paid off in month ${payoffMonth[d.name]}`
+                : "—"}
+            </span>
           </li>
         ))}
       </ul>
