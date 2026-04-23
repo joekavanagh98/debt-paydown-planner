@@ -40,18 +40,23 @@ interface WorkingEntry {
   targeted: boolean;
 }
 
+type Comparator = (a: WorkingDebt, b: WorkingDebt) => number;
+
 /**
- * Avalanche paydown: pay minimums everywhere, then throw every spare
- * dollar at the highest-rate debt until it's gone, then roll to the
- * next-highest, and so on. All dollar values in the returned schedule
- * are in dollars (cents are an internal detail).
+ * Internal: month-by-month payoff loop. The only thing that varies
+ * between strategies is the sort order of the working list — both
+ * avalanche and snowball pay minimums everywhere, then cascade the
+ * extra down the sorted list. The comparator decides what "down" means.
+ *
+ * All dollar values in the returned schedule are in dollars; cents
+ * are an internal detail kept inside this function so 600 months of
+ * compounding can't accumulate floating-point drift.
  */
-export function avalanchePaydown(
+function runPaydown(
   debts: Debt[],
   monthlyBudget: number,
+  compare: Comparator,
 ): PaydownResult {
-  // Work in integer cents internally so 600 months of compounding can't
-  // accumulate floating-point drift.
   const working: WorkingDebt[] = debts
     .map((d) => ({
       name: d.name,
@@ -59,7 +64,7 @@ export function avalanchePaydown(
       balance: toCents(d.balance),
       minPayment: toCents(calculateMinimumPayment(d)),
     }))
-    .sort((a, b) => b.rate - a.rate);
+    .sort(compare);
 
   const budgetCents = toCents(monthlyBudget);
   const totalMinimums = working.reduce((sum, d) => sum + d.minPayment, 0);
@@ -91,7 +96,7 @@ export function avalanchePaydown(
     // Pass 1: accrue interest and apply the minimum payment on each
     // still-active debt. Any unspent minimum (debt already paid off,
     // or balance smaller than the minimum) rolls into the extra pool
-    // so it cascades to the next avalanche target in the same month.
+    // so it cascades to the next target in the same month.
     for (const e of entries) {
       const d = e.debt;
       if (d.balance <= 0) {
@@ -107,7 +112,7 @@ export function avalanchePaydown(
       extra += d.minPayment - minPay;
     }
 
-    // Pass 2: cascade extra payment down the rate-sorted list.
+    // Pass 2: cascade extra payment down the sorted list.
     for (const e of entries) {
       const d = e.debt;
       if (d.balance <= 0) continue;
@@ -131,4 +136,31 @@ export function avalanchePaydown(
   }
 
   return { feasible: true, schedule };
+}
+
+/**
+ * Avalanche paydown: pay minimums everywhere, then throw every spare
+ * dollar at the highest-rate debt until it's gone, then roll to the
+ * next-highest, and so on. Mathematically optimal — minimizes total
+ * interest paid.
+ */
+export function avalanchePaydown(
+  debts: Debt[],
+  monthlyBudget: number,
+): PaydownResult {
+  return runPaydown(debts, monthlyBudget, (a, b) => b.rate - a.rate);
+}
+
+/**
+ * Snowball paydown: pay minimums everywhere, then throw every spare
+ * dollar at the smallest-balance debt until it's gone, then roll to
+ * the next-smallest. Pays more interest than avalanche but produces
+ * faster early "wins" — the behavioral case for snowball is that
+ * people stick with it.
+ */
+export function snowballPaydown(
+  debts: Debt[],
+  monthlyBudget: number,
+): PaydownResult {
+  return runPaydown(debts, monthlyBudget, (a, b) => a.balance - b.balance);
 }

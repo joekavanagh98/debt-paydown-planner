@@ -19,6 +19,8 @@ export interface ScheduleEntry {
 
 export type ScheduleMonth = ScheduleEntry[];
 
+export type Strategy = "avalanche" | "snowball";
+
 // Discriminated union on `feasible` — consumers narrow by checking the
 // tag before reading the branch-specific fields.
 export type PaydownResult =
