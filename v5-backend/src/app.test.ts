@@ -1,13 +1,9 @@
-import { beforeEach, describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import request from "supertest";
 import { buildApp } from "./app.js";
-import { _resetForTests } from "./services/debts.service.js";
 
+// setupMongo handles connection lifecycle and per-test cleanup.
 const app = buildApp();
-
-beforeEach(() => {
-  _resetForTests();
-});
 
 describe("GET /health", () => {
   it("returns 200 with status ok", async () => {

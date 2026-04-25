@@ -7,24 +7,24 @@ import {
   listDebts,
 } from "../services/debts.service.js";
 
-export function getDebts(_req: Request, res: Response): void {
-  res.json(listDebts());
+export async function getDebts(_req: Request, res: Response): Promise<void> {
+  res.json(await listDebts());
 }
 
-export function postDebt(
+export async function postDebt(
   req: Request<unknown, unknown, NewDebt>,
   res: Response,
-): void {
-  const debt = createDebt(req.body);
+): Promise<void> {
+  const debt = await createDebt(req.body);
   res.status(201).json(debt);
 }
 
-export function deleteDebt(
+export async function deleteDebt(
   req: Request<{ id: string }>,
   res: Response,
-): void {
+): Promise<void> {
   const { id } = req.params;
-  const deleted = deleteDebtById(id);
+  const deleted = await deleteDebtById(id);
   if (!deleted) {
     throw new NotFoundError(`Debt ${id} not found`);
   }

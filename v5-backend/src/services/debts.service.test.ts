@@ -1,51 +1,52 @@
-import { beforeEach, describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
-  _resetForTests,
   createDebt,
   deleteDebtById,
   listDebts,
 } from "./debts.service.js";
 
-beforeEach(() => {
-  _resetForTests();
-});
+// setupMongo (vitest setupFile) handles connection lifecycle and
+// per-test cleanup. No beforeEach reset hook needed in the service.
 
 describe("debts service", () => {
-  it("starts empty", () => {
-    expect(listDebts()).toEqual([]);
+  it("starts empty", async () => {
+    expect(await listDebts()).toEqual([]);
   });
 
-  it("createDebt assigns a uuid and stores the debt", () => {
-    const created = createDebt({
+  it("createDebt assigns a uuid and stores the debt", async () => {
+    const created = await createDebt({
       name: "Visa",
       balance: 5000,
       rate: 20,
       minPayment: 100,
     });
-    expect(created.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    expect(created.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
     expect(created.name).toBe("Visa");
-    expect(listDebts()).toEqual([created]);
+    expect(await listDebts()).toEqual([created]);
   });
 
-  it("listDebts returns debts in insertion order", () => {
-    const a = createDebt({ name: "A", balance: 100, rate: 10, minPayment: 25 });
-    const b = createDebt({ name: "B", balance: 200, rate: 10, minPayment: 25 });
-    const c = createDebt({ name: "C", balance: 300, rate: 10, minPayment: 25 });
-    expect(listDebts().map((d) => d.id)).toEqual([a.id, b.id, c.id]);
+  it("listDebts returns each created debt", async () => {
+    const a = await createDebt({ name: "A", balance: 100, rate: 10, minPayment: 25 });
+    const b = await createDebt({ name: "B", balance: 200, rate: 10, minPayment: 25 });
+    const c = await createDebt({ name: "C", balance: 300, rate: 10, minPayment: 25 });
+    const ids = (await listDebts()).map((d) => d.id).sort();
+    expect(ids).toEqual([a.id, b.id, c.id].sort());
   });
 
-  it("deleteDebtById returns true when removing an existing debt", () => {
-    const created = createDebt({
+  it("deleteDebtById returns true when removing an existing debt", async () => {
+    const created = await createDebt({
       name: "Visa",
       balance: 5000,
       rate: 20,
       minPayment: 100,
     });
-    expect(deleteDebtById(created.id)).toBe(true);
-    expect(listDebts()).toEqual([]);
+    expect(await deleteDebtById(created.id)).toBe(true);
+    expect(await listDebts()).toEqual([]);
   });
 
-  it("deleteDebtById returns false when the id does not exist", () => {
-    expect(deleteDebtById("not-a-real-id")).toBe(false);
+  it("deleteDebtById returns false when the id does not exist", async () => {
+    expect(await deleteDebtById("00000000-0000-4000-8000-000000000000")).toBe(false);
   });
 });

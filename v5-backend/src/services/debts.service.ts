@@ -1,30 +1,27 @@
 import type { Debt, NewDebt } from "../types/index.js";
+import { DebtModel, toDebt } from "../models/debt.model.js";
 
-// Module-level Map keyed by debt id. v6 swaps this for Mongoose calls;
-// the function signatures here stay the same so the controller layer
-// doesn't have to change. Map (not array) for O(1) lookup by id, and
-// because insertion order is preserved on iteration, listDebts returns
-// debts in the order they were created without an explicit sort.
-const store = new Map<string, Debt>();
+/**
+ * The signatures match v5's in-memory service except every function
+ * is now async. Express 5 propagates rejections to the central error
+ * handler, so callers don't need try/catch — they just await.
+ *
+ * .lean() returns plain objects instead of Mongoose Documents, which
+ * are cheaper to allocate and serialize. We don't mutate the results,
+ * so we don't need the Document machinery.
+ */
 
-export function listDebts(): Debt[] {
-  return Array.from(store.values());
+export async function listDebts(): Promise<Debt[]> {
+  const docs = await DebtModel.find({}).lean();
+  return docs.map(toDebt);
 }
 
-export function createDebt(input: NewDebt): Debt {
-  const debt: Debt = { id: crypto.randomUUID(), ...input };
-  store.set(debt.id, debt);
-  return debt;
+export async function createDebt(input: NewDebt): Promise<Debt> {
+  const doc = await DebtModel.create(input);
+  return toDebt(doc.toObject());
 }
 
-export function deleteDebtById(id: string): boolean {
-  return store.delete(id);
-}
-
-// Test-only escape hatch. The in-memory store is module-scoped so it
-// survives between test cases unless explicitly cleared. v6 swaps the
-// Map for Mongoose calls and tests will use a separate test database
-// instead, at which point this can go.
-export function _resetForTests(): void {
-  store.clear();
+export async function deleteDebtById(id: string): Promise<boolean> {
+  const result = await DebtModel.deleteOne({ _id: id });
+  return result.deletedCount === 1;
 }
