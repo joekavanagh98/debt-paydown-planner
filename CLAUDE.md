@@ -60,8 +60,12 @@ adding tooling to versions that don't need it:
   Just HTML, CSS, JS files opened directly in the browser.
 - v2 (React): package.json via Vite scaffold, prettier config standard
 - v3 (TypeScript): add tsconfig.json, type-check as part of build
-- v4 (Tailwind): tailwind.config.js and postcss.config.js
-- v5 (Express backend): package.json, .env.example, nodemon for dev
+- v4 (Tailwind): Tailwind v4 with CSS-first config (`@import "tailwindcss"`
+  in src/index.css plus the `@tailwindcss/vite` plugin in vite.config.ts).
+  No tailwind.config.js or postcss.config.js anymore.
+- v5 (Express backend): package.json, .env.example, Express 5,
+  tsx watch for dev. tsx replaces ts-node + nodemon and runs TypeScript
+  directly with watch-mode rebuild.
 - v6-v8: incremental additions as noted in version roadmap above
 
 `.gitignore` at the repo root covers all version folders.
