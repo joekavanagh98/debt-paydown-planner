@@ -1,5 +1,12 @@
 # v5-backend Notes
 
+v5 was the in-memory backend. v6 modifies v5 in place to swap that
+in-memory Map for MongoDB via Mongoose. CLAUDE.md calls v6 out as
+the one version that does not get its own folder. Everything below
+that mentions storage/persistence is from v6 unless it says
+otherwise; the section "v6: Mongoose" at the bottom collects the
+v6-specific decisions.
+
 ## Project structure
 
 ### Fresh project, not a copy
@@ -203,7 +210,7 @@ to remember.
 
 - `paydownCalculator.test.ts`: 16 calculator tests, ported from v4
 - `paydown.service.test.ts`: 2 dispatch tests
-- `debts.service.test.ts`: 5 in-memory CRUD tests
+- `debts.service.test.ts`: 5 CRUD tests against Mongoose
 - `app.test.ts`: 12 supertest end-to-end tests
 
 The unit tests cover each layer in isolation. The supertest file
@@ -213,15 +220,20 @@ would show up.
 ### supertest doesn't open a port
 
 `request(buildApp())` runs the request through the Express
-internals without binding to TCP. Tests are fast (~250ms for the
-whole suite) and don't fight each other for ports.
+internals without binding to TCP. Tests don't fight each other for
+ports. Suite total in v6 is around 3s, mostly the one-time
+mongodb-memory-server startup; in-test queries are well under 2ms
+each.
 
-### _resetForTests escape hatch
+### Test isolation via memory-server, not a reset hatch
 
-The in-memory store is module-scoped. Between test cases it
-survives. `_resetForTests()` clears the Map. The leading underscore
-and the function name make the intent loud. v6 swaps the Map for
-Mongoose calls and the hatch can go.
+v5 used a module-scoped Map and a `_resetForTests()` export to
+clear state between cases. v6 deletes that hatch. `setupMongo.ts`
+runs as a vitest setupFile and provides the lifecycle:
+`beforeAll` starts an ephemeral MongoDB and connects mongoose,
+`afterEach` clears every collection so test cases never see each
+other's data, `afterAll` stops the server. Tests don't have to
+remember to clear anything.
 
 ## What could be better
 
@@ -248,14 +260,14 @@ array (`origin: [env.CORS_ORIGIN]`) would only echo if the request
 matches, which surfaces intent more clearly. Cosmetic for v5; will
 probably switch in v7 alongside the rest of the security pass.
 
-### Schemas duplicate the types
+### Schemas duplicate the types. **Fixed in v6.**
 
-`Debt` interface in `src/types/index.ts` and `debtSchema` in
-`src/validators/debts.schema.ts` have to agree manually.
-`z.infer<typeof debtSchema>` would make the schema the single
-source of truth and the interface a derived type. Not done because
-v3+ has been treating types/index.ts as canonical, and v5 follows
-the pattern. v6 might consolidate.
+In v5, the Debt interface in `src/types/index.ts` and the
+`debtSchema` in `src/validators/debts.schema.ts` had to agree
+manually. v6 consolidates: the Zod schema is the source of truth
+and the type comes from `z.infer<typeof debtSchema>`. Same for
+Strategy. `src/types/index.ts` re-exports those types, so existing
+import paths still work and stay in sync automatically.
 
 ### No structured request body in pino
 
@@ -265,13 +277,13 @@ duration as discrete keys). Trade-off: another dependency for a
 slightly nicer log shape. CLAUDE.md asked for morgan, so morgan it
 is.
 
-### No graceful shutdown
+### No graceful shutdown. **Fixed in v6.**
 
-`server.ts` calls `app.listen()` and that's it. SIGTERM/SIGINT
-will kill the process mid-request. A graceful shutdown handler
-that stops accepting new connections, waits for in-flight requests
-to finish, then exits would be polite for production. v8
-(deployment) is when this matters.
+In v5, `server.ts` called `app.listen()` and that was it. A
+SIGTERM (process manager kill) or SIGINT (Ctrl+C) would terminate
+the process mid-request. v6 adds a graceful shutdown handler:
+the listener stops accepting new connections, in-flight requests
+drain, then mongoose disconnects. Same handler for both signals.
 
 ### Repeated npm install pollution. **Fixed.**
 
@@ -287,3 +299,98 @@ which prints a copy-pasteable recovery command and exits non-zero.
 Any future install at the root fails loudly instead of polluting.
 Active version is named in the script and updates when the focus
 moves on.
+
+## v6: Mongoose
+
+### Storage swap, signatures stay
+
+The whole point of the layered architecture: persistence can change
+without the routes, validators, controllers, or error handler
+moving. v5 had a module-scoped Map; v6 has Mongoose. The service
+exports the same three functions (`listDebts`, `createDebt`,
+`deleteDebtById`), but they all return Promises now.
+
+### Async controllers, no try/catch
+
+Express 5 propagates async rejections to the error handler the same
+way it does sync throws. So when a controller becomes
+`async (req, res) => { ... }` and the service rejects, the existing
+error handler middleware catches it. No `try { ... } catch (e) {
+next(e); }` boilerplate. Express 4 needed `express-async-errors`
+or hand-wrapping to do this.
+
+### UUID `_id` instead of ObjectId
+
+Mongoose's default `_id` is an ObjectId. Switching to ObjectIds in
+v6 would break v5's API contract (`id: string (uuid)`), the Zod
+validator (`z.string().uuid()`), and any deployed v4 frontend code
+that already uses UUIDs. The model overrides `_id`:
+
+```ts
+_id: { type: String, default: () => randomUUID() }
+```
+
+The persisted document field is still called `_id` (Mongoose
+convention) but holds a UUID. `toDebt()` in the model file remaps
+`_id` to `id` for API responses, so the controller and clients
+never see Mongo's underlying field name.
+
+### Light Mongoose validation
+
+Zod runs at the API boundary and validates shape before any
+service call. Mongoose's own validators (`required`, `maxlength`,
+etc.) are defense-in-depth, not the primary contract. They're set
+on the schema for safety but they should never fire in practice.
+
+### Atlas free tier for dev and prod
+
+`MONGODB_URI` points at MongoDB Atlas's free M0 cluster. Same URI
+shape (`mongodb+srv://...`) for dev and the v8 deploy. Tradeoffs:
+
+- M0 is a shared cluster. Latency is 30-100ms vs sub-millisecond
+  for a local Mongo. Fine for a planner; would be wrong for a
+  high-throughput API.
+- Connection string includes the user/password. `.env` is
+  gitignored; `.env.example` shows the shape with placeholder
+  credentials. Never commit a real one.
+- Network allowlist is set to `0.0.0.0/0` for dev so the laptop
+  doesn't need a stable IP and Vercel deploys can hit it without
+  knowing Vercel's egress addresses ahead of time. Pragmatic
+  capstone-tier compromise; v7's security pass should narrow it.
+
+### Test database is mongodb-memory-server
+
+CI/local test runs never touch Atlas. `mongodb-memory-server` spins
+an ephemeral Mongo per test file in <1s after the first run (the
+binary downloads once, ~80MB, then caches). Connection lifecycle
+lives in `src/test/setupMongo.ts`. Each test file gets a clean
+database; each test gets cleared collections.
+
+### Connection lifecycle in server.ts
+
+`connectMongo()` runs before `app.listen()` so the HTTP server
+doesn't start taking requests before the driver is ready. Mongoose
+internally buffers operations until the connection opens, but a
+request that arrived during the buffer would silently stall, which
+is worse than refusing to start.
+
+`disconnectMongo()` runs from a SIGTERM/SIGINT handler that first
+calls `server.close()` to drain in-flight requests, then closes
+mongoose. Without it, a deploy or Ctrl+C would kill in-progress
+queries mid-write.
+
+### What v6 still does not do
+
+- No request-id correlation across access log + app log + error log.
+  Same gap as v5; pino-http or a custom request-id middleware would
+  close it. Probably v7.
+- No connection-string rotation logic. If Atlas credentials change,
+  the dev needs to re-set `.env` and restart. Fine for a capstone;
+  not what a real production service would do.
+- No retries on transient connection failures. Mongoose has built-in
+  retryability for some operations, but a complete connection drop
+  needs a reconnect strategy. v8 (deploy) is when this matters more.
+- Mongoose schema and Zod schema describe the same shape twice.
+  Libraries like zod-mongoose or mongoose-to-zod could derive one
+  from the other. Adding a dependency to remove ~5 lines of
+  duplication isn't worth it yet.

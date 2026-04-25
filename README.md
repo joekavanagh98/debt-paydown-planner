@@ -27,7 +27,7 @@ from the directory tree.
 | [v3](v3-typescript/) | TypeScript strict | Shared types module, discriminated union for the calculator's result, typed props and event handlers, `noUncheckedIndexedAccess` opt-in | Complete |
 | [v4](v4-tailwind/) | Tailwind CSS v4, Recharts | CSS-first Tailwind config, mobile-first responsive layout, avalanche and snowball comparison with per-debt balance charts, Vercel deploy config | Complete |
 | [v5](v5-backend/) | Express 5, TypeScript, Zod | Layered backend (routes/controllers/services), centralized error handling and JSON error envelope, Zod request validation, env config validated at boot, pino + morgan logging, CORS, supertest end-to-end tests | Complete |
-| v6 | MongoDB, Mongoose, Zod | Persistent storage, schema validation at the boundary | Planned |
+| [v6](v5-backend/) | MongoDB Atlas, Mongoose | Persistent storage in v5-backend (in-place modification), UUID `_id`, mongodb-memory-server for tests, graceful shutdown, schema/type consolidation via z.infer | Complete |
 | v7 | JWT, bcrypt | Authentication, rate limiting, security headers, CORS pinning | Planned |
 | v8 | Deployed + Claude API | Production deployment, AI-assisted debt extraction from uploaded statements, staff dashboard | Planned |
 
