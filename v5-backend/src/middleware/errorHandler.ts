@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler } from "express";
 import { AppError, ValidationError } from "../errors/AppError.js";
+import { logger } from "../utils/logger.js";
 
 interface ErrorBody {
   error: {
@@ -37,7 +38,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  console.error("Unhandled error:", err);
+  logger.error({ err }, "Unhandled error");
   res.status(500).json({
     error: { code: "internal_error", message: "Internal server error" },
   });

@@ -2,10 +2,15 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import { NotFoundError } from "./errors/AppError.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { requestLogger } from "./middleware/requestLogger.js";
 import { router } from "./routes/index.js";
 
 export function buildApp(): express.Express {
   const app = express();
+
+  // Request logging runs before everything so even malformed bodies
+  // get a log line.
+  app.use(requestLogger);
 
   app.use(express.json());
 
