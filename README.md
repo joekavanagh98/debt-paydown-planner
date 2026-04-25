@@ -26,7 +26,7 @@ from the directory tree.
 | [v2](v2-react/) | React, Vite | Feature-based component structure, lifting state, controlled inputs, `useMemo`, lazy initial state, functional setters | Complete |
 | [v3](v3-typescript/) | TypeScript strict | Shared types module, discriminated union for the calculator's result, typed props and event handlers, `noUncheckedIndexedAccess` opt-in | Complete |
 | [v4](v4-tailwind/) | Tailwind CSS v4, Recharts | CSS-first Tailwind config, mobile-first responsive layout, avalanche and snowball comparison with per-debt balance charts, Vercel deploy config | Complete |
-| v5 | Express, Node.js | Layered backend (routes/controllers/services/models), centralized error handling, structured logging, env-based config | Planned |
+| [v5](v5-backend/) | Express 5, TypeScript, Zod | Layered backend (routes/controllers/services), centralized error handling and JSON error envelope, Zod request validation, env config validated at boot, pino + morgan logging, CORS, supertest end-to-end tests | Complete |
 | v6 | MongoDB, Mongoose, Zod | Persistent storage, schema validation at the boundary | Planned |
 | v7 | JWT, bcrypt | Authentication, rate limiting, security headers, CORS pinning | Planned |
 | v8 | Deployed + Claude API | Production deployment, AI-assisted debt extraction from uploaded statements, staff dashboard | Planned |
