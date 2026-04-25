@@ -1,0 +1,8 @@
+{
+  "name": "debt-paydown-planner",
+  "private": true,
+  "description": "Root guard. Each version folder (v1-vanilla, v2-react, etc.) has its own package.json. Run npm install inside the version folder you are working on, not at the repo root.",
+  "scripts": {
+    "preinstall": "node scripts/block-root-install.mjs"
+  }
+}
