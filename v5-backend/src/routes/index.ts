@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { paydownRouter } from "./paydown.routes.js";
 
 export const router = Router();
 
@@ -10,4 +11,6 @@ router.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
-// Sub-routers (debts, paydown) get mounted here in subsequent commits.
+router.use("/paydown", paydownRouter);
+
+// Debts router lands in the next commit.
