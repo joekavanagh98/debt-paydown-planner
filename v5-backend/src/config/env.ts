@@ -15,6 +15,11 @@ const envSchema = z.object({
   // process.env values are always strings; z.coerce.number bridges that.
   PORT: z.coerce.number().int().positive().default(3001),
 
+  // No default. The dev server requires a real Mongo URI to start.
+  // mongodb-memory-server provides one for tests via setup hooks, so
+  // tests don't need MONGODB_URI in the shell environment either.
+  MONGODB_URI: z.string().min(1),
+
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
 
   LOG_LEVEL: z
