@@ -1,14 +1,14 @@
-export interface Debt {
-  id: string;
-  name: string;
-  balance: number;
-  rate: number;
-  // 0 means "no explicit minimum", calculator falls back to interest + 1% of principal.
-  minPayment: number;
-}
+// Re-exports of types whose runtime contract lives in a Zod schema.
+// Schema is the source of truth; the type comes from z.infer. Anything
+// imported via `../types/index.js` continues to work and stays in sync
+// automatically when the schema changes.
+export type { Debt, NewDebt } from "../validators/debts.schema.js";
+export type { Strategy } from "../validators/paydown.schema.js";
 
-export type NewDebt = Omit<Debt, "id">;
-
+// Calculator output types. No runtime validation (the calculator is
+// pure code we trust); no Zod schema needed. They live here because
+// they're internal contract types between the calculator and its
+// consumers, not API request shapes.
 export interface ScheduleEntry {
   name: string;
   balance: number;
@@ -18,8 +18,6 @@ export interface ScheduleEntry {
 }
 
 export type ScheduleMonth = ScheduleEntry[];
-
-export type Strategy = "avalanche" | "snowball";
 
 // Discriminated union on `feasible` — consumers narrow by checking the
 // tag before reading the branch-specific fields.
