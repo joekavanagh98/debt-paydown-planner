@@ -1,8 +1,9 @@
 import morgan from "morgan";
 import type { RequestHandler } from "express";
+import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
-const isProduction = process.env.NODE_ENV === "production";
+const isProduction = env.NODE_ENV === "production";
 
 // Morgan format: 'combined' (Apache-style) for production logs that
 // downstream tools know how to parse, 'dev' for colorful one-liners
