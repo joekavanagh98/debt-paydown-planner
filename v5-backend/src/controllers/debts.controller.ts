@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import type { NewDebt } from "../types/index.js";
+import { NotFoundError } from "../errors/AppError.js";
 import {
   createDebt,
   deleteDebtById,
@@ -25,10 +26,7 @@ export function deleteDebt(
   const { id } = req.params;
   const deleted = deleteDebtById(id);
   if (!deleted) {
-    res.status(404).json({
-      error: { code: "not_found", message: `Debt ${id} not found` },
-    });
-    return;
+    throw new NotFoundError(`Debt ${id} not found`);
   }
   res.status(204).end();
 }
