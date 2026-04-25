@@ -20,3 +20,11 @@ export function createDebt(input: NewDebt): Debt {
 export function deleteDebtById(id: string): boolean {
   return store.delete(id);
 }
+
+// Test-only escape hatch. The in-memory store is module-scoped so it
+// survives between test cases unless explicitly cleared. v6 swaps the
+// Map for Mongoose calls and tests will use a separate test database
+// instead, at which point this can go.
+export function _resetForTests(): void {
+  store.clear();
+}
