@@ -15,10 +15,20 @@ import { useAuth } from "./authContext";
  * leaks server internals.
  */
 function AuthGate() {
-  const { login, register } = useAuth();
+  const { login, register, sessionExpired } = useAuth();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [localError, setLocalError] = useState<string | undefined>(undefined);
+
+  // localError (from a failed submit) takes priority. The session-
+  // expired message acts as a default until the user types and the
+  // first submit overwrites it. Reading it from context as a derived
+  // value (rather than seeding state in an effect) avoids the
+  // react-hooks/set-state-in-effect rule and keeps a single source
+  // of truth.
+  const error: string | undefined =
+    localError ??
+    (sessionExpired ? "Your session expired. Please sign in again." : undefined);
 
   const handleSubmit = async ({
     email,
@@ -28,7 +38,7 @@ function AuthGate() {
     password: string;
   }): Promise<void> => {
     setSubmitting(true);
-    setError(undefined);
+    setLocalError(undefined);
     try {
       if (mode === "login") {
         await login({ email, password });
@@ -36,7 +46,7 @@ function AuthGate() {
         await register({ email, password });
       }
     } catch (e: unknown) {
-      setError(messageFor(e, mode));
+      setLocalError(messageFor(e, mode));
     } finally {
       setSubmitting(false);
     }
@@ -44,7 +54,7 @@ function AuthGate() {
 
   const handleSwitchMode = (): void => {
     setMode((m) => (m === "login" ? "register" : "login"));
-    setError(undefined);
+    setLocalError(undefined);
   };
 
   return (

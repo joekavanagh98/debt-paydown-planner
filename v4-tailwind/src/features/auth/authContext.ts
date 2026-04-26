@@ -11,6 +11,11 @@ export interface AuthContextValue {
   // `user !== null` rather than tracking a separate isAuthenticated
   // boolean — one source of truth.
   user: User | null;
+  // True after a 401 caused an automatic logout (session expired
+  // mid-use). AuthGate reads this to surface a "session ended"
+  // message above the login form. Resets to false on a successful
+  // login/register or a manual logout.
+  sessionExpired: boolean;
   login: (credentials: AuthCredentials) => Promise<void>;
   register: (credentials: AuthCredentials) => Promise<void>;
   logout: () => void;

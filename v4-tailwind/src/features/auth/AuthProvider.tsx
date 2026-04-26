@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { apiRequest, setAuthToken } from "../../lib/api";
+import { apiRequest, setAuthToken, setOnAuthError } from "../../lib/api";
 import type { LoginResponse, User } from "../../types";
 import { AuthContext, type AuthContextValue } from "./authContext";
 
@@ -19,12 +19,32 @@ interface AuthProviderProps {
  * "am I signed in?" probe to do — refreshes always start signed out.
  *
  * Loading and error state are deliberately not tracked here.
- * Consumers (the AuthGate that renders AuthForm in c4) keep their
- * own useState for "submitting" and "error" so a logout button or
- * a page reload doesn't have to share UI state with the login form.
+ * Consumers (the AuthGate that renders AuthForm) keep their own
+ * useState for "submitting" and "error" so a logout button or a
+ * page reload doesn't have to share UI state with the login form.
+ *
+ * 401 mid-session: a single global handler is registered against
+ * api.ts on mount. When any authed request comes back 401 (typically
+ * an expired JWT), the handler clears the token + user and flips
+ * sessionExpired to true so AuthGate can surface the "your session
+ * expired" message. setSessionExpired(false) on every login /
+ * register success and on manual logout resets the message before
+ * it lingers into a fresh session.
  */
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
+  const [sessionExpired, setSessionExpired] = useState<boolean>(false);
+
+  useEffect(() => {
+    setOnAuthError(() => {
+      setAuthToken(null);
+      setUser(null);
+      setSessionExpired(true);
+    });
+    return () => {
+      setOnAuthError(null);
+    };
+  }, []);
 
   const login = useCallback(
     async ({ email, password }: { email: string; password: string }) => {
@@ -34,6 +54,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       setAuthToken(result.token);
       setUser(result.user);
+      setSessionExpired(false);
     },
     [],
   );
@@ -54,6 +75,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       });
       setAuthToken(result.token);
       setUser(result.user);
+      setSessionExpired(false);
     },
     [],
   );
@@ -61,9 +83,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = useCallback(() => {
     setAuthToken(null);
     setUser(null);
+    setSessionExpired(false);
   }, []);
 
-  const value: AuthContextValue = { user, login, register, logout };
+  const value: AuthContextValue = {
+    user,
+    sessionExpired,
+    login,
+    register,
+    logout,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

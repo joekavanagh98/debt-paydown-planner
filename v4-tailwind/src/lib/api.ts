@@ -24,6 +24,24 @@ export function setAuthToken(token: string | null): void {
 }
 
 /**
+ * Optional 401 handler. Registered once by the AuthProvider so any
+ * authed request that comes back 401 (typically because the JWT
+ * expired mid-session) can be turned into a global "session ended"
+ * transition: clear the token, clear user state, surface a message
+ * to the login screen.
+ *
+ * Per-call wrapping was the alternative. The global handler keeps
+ * the auth/HTTP boundary in one place and means future authed
+ * endpoints get the same behavior for free instead of needing each
+ * caller to remember to wrap.
+ */
+let onAuthError: (() => void) | null = null;
+
+export function setOnAuthError(callback: (() => void) | null): void {
+  onAuthError = callback;
+}
+
+/**
  * Shape of the standard error envelope every backend route returns
  * when something goes wrong. Mirrors v5-backend/src/errors/AppError.ts.
  */
@@ -102,6 +120,9 @@ async function rawRequest(
   const body: unknown = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    if (response.status === 401 && onAuthError !== null) {
+      onAuthError();
+    }
     throw new ApiRequestError(response.status, body as ApiErrorBody);
   }
 
