@@ -4,6 +4,14 @@
 // automatically when the schema changes.
 export type { Debt, NewDebt } from "../validators/debts.schema.js";
 export type { Strategy } from "../validators/paydown.schema.js";
+export type {
+  LoginInput,
+  RegisterInput,
+} from "../validators/auth.schema.js";
+
+// User-facing types backed by the Mongoose model rather than a Zod
+// schema (they describe persistence, not API input).
+export type { UserDoc, UserPublic } from "../models/user.model.js";
 
 // Calculator output types. No runtime validation (the calculator is
 // pure code we trust); no Zod schema needed. They live here because
