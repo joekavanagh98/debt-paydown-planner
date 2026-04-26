@@ -1,30 +1,34 @@
 import type { Request, Response } from "express";
 import type { NewDebt } from "../types/index.js";
 import { NotFoundError } from "../errors/AppError.js";
+import { getUserId } from "../middleware/requireAuth.js";
 import {
   createDebt,
   deleteDebtById,
   listDebts,
 } from "../services/debts.service.js";
 
-export async function getDebts(_req: Request, res: Response): Promise<void> {
-  res.json(await listDebts());
+export async function getDebts(req: Request, res: Response): Promise<void> {
+  const userId = getUserId(req);
+  res.json(await listDebts(userId));
 }
 
 export async function postDebt(
-  req: Request<unknown, unknown, NewDebt>,
+  req: Request<Record<string, string>, unknown, NewDebt>,
   res: Response,
 ): Promise<void> {
-  const debt = await createDebt(req.body);
+  const userId = getUserId(req);
+  const debt = await createDebt(userId, req.body);
   res.status(201).json(debt);
 }
 
 export async function deleteDebt(
-  req: Request<{ id: string }>,
+  req: Request<Record<string, string>>,
   res: Response,
 ): Promise<void> {
-  const { id } = req.params;
-  const deleted = await deleteDebtById(id);
+  const userId = getUserId(req);
+  const id = req.params.id ?? "";
+  const deleted = await deleteDebtById(userId, id);
   if (!deleted) {
     throw new NotFoundError(`Debt ${id} not found`);
   }

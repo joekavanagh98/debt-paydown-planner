@@ -15,7 +15,7 @@ interface PaydownRequestBody {
  * the body matches PaydownRequestBody.
  */
 export function postPaydown(
-  req: Request<unknown, unknown, PaydownRequestBody>,
+  req: Request<Record<string, string>, unknown, PaydownRequestBody>,
   res: Response,
 ): void {
   const { debts, budget, strategy } = req.body;

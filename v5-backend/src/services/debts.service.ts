@@ -2,26 +2,33 @@ import type { Debt, NewDebt } from "../types/index.js";
 import { DebtModel, toDebt } from "../models/debt.model.js";
 
 /**
- * The signatures match v5's in-memory service except every function
- * is now async. Express 5 propagates rejections to the central error
- * handler, so callers don't need try/catch — they just await.
+ * Every debts query is scoped to a userId. listDebts only returns the
+ * caller's debts; createDebt stamps the new doc with the caller's
+ * userId; deleteDebtById refuses to delete a doc owned by another user.
  *
- * .lean() returns plain objects instead of Mongoose Documents, which
- * are cheaper to allocate and serialize. We don't mutate the results,
- * so we don't need the Document machinery.
+ * The deleteOne query uses both _id and userId. If user A guesses
+ * user B's debt id, the query matches zero documents (deletedCount=0),
+ * and the controller returns 404 — same response as a non-existent id,
+ * so the caller can't probe for which ids belong to other users.
  */
 
-export async function listDebts(): Promise<Debt[]> {
-  const docs = await DebtModel.find({}).lean();
+export async function listDebts(userId: string): Promise<Debt[]> {
+  const docs = await DebtModel.find({ userId }).lean();
   return docs.map(toDebt);
 }
 
-export async function createDebt(input: NewDebt): Promise<Debt> {
-  const doc = await DebtModel.create(input);
+export async function createDebt(
+  userId: string,
+  input: NewDebt,
+): Promise<Debt> {
+  const doc = await DebtModel.create({ userId, ...input });
   return toDebt(doc.toObject());
 }
 
-export async function deleteDebtById(id: string): Promise<boolean> {
-  const result = await DebtModel.deleteOne({ _id: id });
+export async function deleteDebtById(
+  userId: string,
+  id: string,
+): Promise<boolean> {
+  const result = await DebtModel.deleteOne({ _id: id, userId });
   return result.deletedCount === 1;
 }

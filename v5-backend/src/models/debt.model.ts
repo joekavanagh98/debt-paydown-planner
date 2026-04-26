@@ -22,6 +22,10 @@ import { randomUUID } from "node:crypto";
 const debtMongooseSchema = new Schema(
   {
     _id: { type: String, default: () => randomUUID() },
+    // Owning user. Indexed so the per-user list query stays fast even
+    // as the collection grows. Required and never exposed via toDebt;
+    // it's an internal scoping field, not part of the API contract.
+    userId: { type: String, required: true, index: true },
     name: { type: String, required: true, maxlength: 40 },
     balance: { type: Number, required: true },
     rate: { type: Number, required: true },

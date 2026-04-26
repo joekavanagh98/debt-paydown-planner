@@ -6,7 +6,7 @@ import type {
 import { loginUser, registerUser } from "../services/auth.service.js";
 
 export async function postRegister(
-  req: Request<unknown, unknown, RegisterInput>,
+  req: Request<Record<string, string>, unknown, RegisterInput>,
   res: Response,
 ): Promise<void> {
   const user = await registerUser(req.body);
@@ -14,7 +14,7 @@ export async function postRegister(
 }
 
 export async function postLogin(
-  req: Request<unknown, unknown, LoginInput>,
+  req: Request<Record<string, string>, unknown, LoginInput>,
   res: Response,
 ): Promise<void> {
   const result = await loginUser(req.body);
