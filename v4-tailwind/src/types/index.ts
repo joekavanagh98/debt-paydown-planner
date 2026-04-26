@@ -32,3 +32,23 @@ export type PaydownResult =
       shortfall: number;
     }
   | { feasible: false; reason: "exceeds50Years" };
+
+// ---- v8: Auth surface types ----
+//
+// These mirror v5-backend's contracts. Duplicated rather than shared
+// because pulling in a workspaces refactor or codegen pipeline doesn't
+// earn its place in v8. See NOTES.md for the three proper solutions
+// (workspaces, OpenAPI codegen, tRPC) and why each one is deferred.
+
+export interface User {
+  id: string;
+  email: string;
+  // Server returns ISO 8601 strings. Could be parsed into Date at the
+  // boundary; left as string for now since nothing in v8 displays it.
+  createdAt: string;
+}
+
+export interface LoginResponse {
+  user: User;
+  token: string;
+}
