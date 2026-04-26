@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
+import { authRouter } from "./auth.routes.js";
 import { debtsRouter } from "./debts.routes.js";
 import { paydownRouter } from "./paydown.routes.js";
 
@@ -12,5 +13,6 @@ router.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
 });
 
+router.use("/auth", authRouter);
 router.use("/debts", debtsRouter);
 router.use("/paydown", paydownRouter);

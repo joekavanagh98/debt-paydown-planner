@@ -31,3 +31,15 @@ export class ValidationError extends AppError {
     this.issues = issues;
   }
 }
+
+export class UnauthorizedError extends AppError {
+  constructor(message: string = "Unauthorized") {
+    super(401, "unauthorized", message);
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message: string = "Resource already exists") {
+    super(409, "already_exists", message);
+  }
+}
