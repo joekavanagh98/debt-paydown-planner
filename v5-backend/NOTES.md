@@ -123,11 +123,11 @@ already produces typed values.
 
 ### Schemas are runtime; types are compile-time
 
-The `Debt` interface in `src/types/index.ts` and `debtSchema` in
-`src/validators/debts.schema.ts` describe the same shape. They have
-to agree but neither derives from the other. v6 might consolidate
-via `z.infer<typeof debtSchema>` so the schema becomes the source
-of truth.
+In v5, the `Debt` interface in `src/types/index.ts` and `debtSchema`
+in `src/validators/debts.schema.ts` described the same shape and had
+to agree manually. v6 consolidated via `z.infer<typeof debtSchema>`
+so the schema is now the source of truth and the type derives from
+it. See the v6 section below.
 
 ## Error handling
 
@@ -200,11 +200,11 @@ overrides via real env vars; the schema validates the override.
 
 ### CORS origin is a single string today
 
-`cors({ origin: env.CORS_ORIGIN })`. Easy to switch to an array
-once there are multiple deploy URLs, or to a function for dynamic
-checks. v8 (auth + production) is when the wrong value would
-actually leak data; setting it correctly now means one less thing
-to remember.
+`cors({ origin: env.CORS_ORIGIN })` in v5. v7 switched to the array
+form (`origin: [env.CORS_ORIGIN]`); see the v7 section. The pinned
+single-origin policy mattered more once auth landed in v7, since
+that's when the API started carrying user-specific data behind
+tokens.
 
 ## Testing
 
@@ -361,7 +361,10 @@ shape (`mongodb+srv://...`) for dev and the v8 deploy. Tradeoffs:
 - Network allowlist is set to `0.0.0.0/0` for dev so the laptop
   doesn't need a stable IP and Vercel deploys can hit it without
   knowing Vercel's egress addresses ahead of time. Pragmatic
-  capstone-tier compromise; v7's security pass should narrow it.
+  capstone-tier compromise. v7's security pass focused on
+  application-layer headers (helmet, rate limit) and didn't touch
+  Atlas network rules; the v8 deploy is the natural place to
+  narrow this to known egress IPs.
 
 ### Test database is mongodb-memory-server
 
@@ -388,7 +391,7 @@ queries mid-write.
 
 - No request-id correlation across access log + app log + error log.
   Same gap as v5; pino-http or a custom request-id middleware would
-  close it. Probably v7.
+  close it. v7 didn't get to it; carrying forward to v8.
 - No connection-string rotation logic. If Atlas credentials change,
   the dev needs to re-set `.env` and restart. Fine for a capstone;
   not what a real production service would do.
