@@ -1,6 +1,7 @@
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { env } from "./config/env.js";
 import { NotFoundError } from "./errors/AppError.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -10,12 +11,20 @@ import { router } from "./routes/index.js";
 export function buildApp(): express.Express {
   const app = express();
 
-  // CORS first so preflight (OPTIONS) requests get handled before any
-  // other middleware burns work on them. Origin is pinned to a single
-  // value (no "*") because the v8 plan exposes user data behind auth
-  // and "*" would be wrong then; setting it correctly now means one
-  // less thing to remember.
-  app.use(cors({ origin: env.CORS_ORIGIN }));
+  // helmet first. Defaults cover X-Content-Type-Options, X-Frame-Options,
+  // Strict-Transport-Security (in production), a baseline
+  // Content-Security-Policy, and a dozen other response headers. One
+  // app.use, twelve quiet defenses.
+  app.use(helmet());
+
+  // CORS next so preflight (OPTIONS) requests get handled before any
+  // other middleware burns work on them. Origin is an array (single
+  // entry today): the array form makes cors echo the matching origin
+  // back only when it matches the request's Origin header, instead of
+  // unconditionally echoing the configured value the way the string
+  // form does. Strictly visible intent, easy to extend with a second
+  // deploy URL.
+  app.use(cors({ origin: [env.CORS_ORIGIN] }));
 
   // Request logging runs before body parsing so even malformed bodies
   // get a log line.
