@@ -3,7 +3,10 @@ import type { ChangeEvent, FormEvent } from "react";
 import type { NewDebt } from "../../types";
 
 interface DebtFormProps {
-  onAdd: (debt: NewDebt) => void;
+  // Async because it now hits the network. Resolves on success, throws
+  // on failure so the form can preserve the inputs for retry instead
+  // of clearing and forcing the user to re-type.
+  onAdd: (debt: NewDebt) => Promise<void>;
 }
 
 interface DebtFormDraft {
@@ -26,6 +29,7 @@ const labelClass = "block text-sm font-medium text-slate-700";
 
 function DebtForm({ onAdd }: DebtFormProps) {
   const [form, setForm] = useState<DebtFormDraft>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState<boolean>(false);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const name = e.target.name as keyof DebtFormDraft;
@@ -33,8 +37,10 @@ function DebtForm({ onAdd }: DebtFormProps) {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (submitting) return;
+
     const name = form.name.trim();
     const balance = parseFloat(form.balance);
     const rate = parseFloat(form.rate);
@@ -45,8 +51,16 @@ function DebtForm({ onAdd }: DebtFormProps) {
     if (!Number.isFinite(rate) || rate < 0) return;
     if (!Number.isFinite(minPayment) || minPayment < 0) return;
 
-    onAdd({ name, balance, rate, minPayment });
-    setForm(EMPTY_FORM);
+    setSubmitting(true);
+    try {
+      await onAdd({ name, balance, rate, minPayment });
+      setForm(EMPTY_FORM);
+    } catch {
+      // Inputs stay populated; user can retry. The parent surfaces
+      // the error message in its own banner.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -132,14 +146,16 @@ function DebtForm({ onAdd }: DebtFormProps) {
       <div className="flex gap-3">
         <button
           type="submit"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+          disabled={submitting}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-slate-400 disabled:hover:bg-slate-400"
         >
-          Add Debt
+          {submitting ? "Saving..." : "Add Debt"}
         </button>
         <button
           type="button"
           onClick={() => setForm(EMPTY_FORM)}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          disabled={submitting}
+          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50"
         >
           Clear
         </button>

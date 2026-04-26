@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Debt, NewDebt } from "./types";
+import type { Debt, NewDebt, User } from "./types";
 import AuthGate from "./features/auth/AuthGate";
 import { useAuth } from "./features/auth/authContext";
 import BudgetInput from "./features/debts/BudgetInput";
@@ -7,45 +7,99 @@ import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
 import StrategyComparison from "./features/debts/StrategyComparison";
 import Summary from "./features/debts/Summary";
+import {
+  createDebt as apiCreateDebt,
+  deleteDebt as apiDeleteDebt,
+  listDebts as apiListDebts,
+} from "./lib/debtsApi";
 import { loadJSON, saveJSON } from "./utils/storage";
 
-const DEBTS_KEY = "dpp.debts";
-const BUDGET_KEY = "dpp.budget";
+// Budget is a per-user UI preference. Server-side preferences would
+// be the proper home (one /users/me/preferences endpoint), but that's
+// not in the v8 scope. Namespacing by user id keeps two users on the
+// same browser from inheriting each other's budget entry.
+const budgetKey = (userId: string): string => `dpp.budget.${userId}`;
 
+/**
+ * Top-level gate. AuthGate when signed out, SignedInApp when signed in.
+ * The key={user.id} on SignedInApp makes React unmount + remount when
+ * the user changes (sign-out then sign-in as a different user) so all
+ * debts/budget state resets without manual cleanup in an effect.
+ */
 function App() {
-  const { user, logout } = useAuth();
-
-  // Hooks always run; early return below is the standard React
-  // pattern (rules of hooks: same hook order every render).
-  // localStorage persistence stays in this commit; c5 swaps it for
-  // the per-user backend.
-  const [debts, setDebts] = useState<Debt[]>(() =>
-    loadJSON<Debt[]>(DEBTS_KEY, []),
-  );
-  const [budget, setBudget] = useState<string>(() =>
-    loadJSON<string>(BUDGET_KEY, ""),
-  );
-
-  useEffect(() => {
-    saveJSON(DEBTS_KEY, debts);
-  }, [debts]);
-
-  useEffect(() => {
-    saveJSON(BUDGET_KEY, budget);
-  }, [budget]);
-
-  const addDebt = (debt: NewDebt) => {
-    const debtWithId: Debt = { ...debt, id: crypto.randomUUID() };
-    setDebts((prev) => [...prev, debtWithId]);
-  };
-
-  const deleteDebt = (id: string) => {
-    setDebts((prev) => prev.filter((d) => d.id !== id));
-  };
-
+  const { user } = useAuth();
   if (user === null) {
     return <AuthGate />;
   }
+  return <SignedInApp user={user} key={user.id} />;
+}
+
+interface SignedInAppProps {
+  user: User;
+}
+
+function SignedInApp({ user }: SignedInAppProps) {
+  const { logout } = useAuth();
+
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [debtsLoading, setDebtsLoading] = useState<boolean>(true);
+  const [debtsError, setDebtsError] = useState<string | null>(null);
+
+  const [budget, setBudget] = useState<string>(() =>
+    loadJSON<string>(budgetKey(user.id), ""),
+  );
+
+  // Fetch debts once at mount. The key={user.id} on this component
+  // means a new user gets a fresh component instance, so this effect
+  // runs once per signed-in session and never has to handle the
+  // signed-out case.
+  useEffect(() => {
+    let cancelled = false;
+    apiListDebts()
+      .then((result) => {
+        if (!cancelled) setDebts(result);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDebtsError("Couldn't load your debts. Try refreshing.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setDebtsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist budget per-user to localStorage on change. Server-side
+  // store would be cleaner; deferred.
+  useEffect(() => {
+    saveJSON(budgetKey(user.id), budget);
+  }, [user.id, budget]);
+
+  const addDebt = async (input: NewDebt): Promise<void> => {
+    try {
+      const created = await apiCreateDebt(input);
+      setDebts((prev) => [...prev, created]);
+      setDebtsError(null);
+    } catch {
+      setDebtsError("Couldn't save the debt. Try again.");
+      // Re-throw so DebtForm knows not to clear its inputs.
+      throw new Error("createDebt failed");
+    }
+  };
+
+  const deleteDebt = async (id: string): Promise<void> => {
+    try {
+      await apiDeleteDebt(id);
+      setDebts((prev) => prev.filter((d) => d.id !== id));
+      setDebtsError(null);
+    } catch {
+      setDebtsError("Couldn't delete the debt. Try again.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -71,10 +125,31 @@ function App() {
             </button>
           </div>
         </header>
+        {debtsError && (
+          <div
+            role="alert"
+            className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+          >
+            <span>{debtsError}</span>
+            <button
+              type="button"
+              onClick={() => setDebtsError(null)}
+              className="text-xs font-semibold text-red-900 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         <Summary debts={debts} />
         <BudgetInput value={budget} onChange={setBudget} />
         <DebtForm onAdd={addDebt} />
-        <DebtList debts={debts} onDelete={deleteDebt} />
+        {debtsLoading ? (
+          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+            Loading your debts...
+          </p>
+        ) : (
+          <DebtList debts={debts} onDelete={deleteDebt} />
+        )}
         <StrategyComparison debts={debts} budget={budget} />
       </main>
     </div>
