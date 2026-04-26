@@ -1,16 +1,17 @@
-# v5 / v6 - Express Backend with MongoDB
+# v5 / v6 / v7 - Express Backend with MongoDB and Auth
 
-Per the project roadmap, v6 modifies v5-backend in place rather than
-creating a new folder. v5 stood up the layered API with in-memory
-storage; v6 swaps the in-memory Map for MongoDB via Mongoose without
-changing the API surface.
+Per the project roadmap, v6 and v7 modify v5-backend in place rather
+than getting their own folders. v5 stood up the layered API with
+in-memory storage. v6 swapped the in-memory Map for MongoDB via
+Mongoose. v7 added authentication, per-user scoping on debts, and a
+security middleware pass.
 
 ## What this is
 
 A REST API for debt CRUD and paydown calculation, written in
 TypeScript on Express 5 with the layered architecture (routes,
 controllers, services, models). Same calculator math as v4, now
-backed by MongoDB and accessible over HTTP.
+backed by MongoDB and gated by JWT auth.
 
 This is a standalone project. It does not consume the v4 frontend
 and v4 does not call this API yet. You exercise it with curl, an
@@ -19,32 +20,34 @@ HTTP client, or the test suite.
 ## What it does
 
 - `GET /health` returns `{"status":"ok"}` for liveness probes
-- `GET /debts` lists all stored debts
-- `POST /debts` creates a debt, server assigns the id, returns 201
-- `DELETE /debts/:id` removes a debt, returns 204 (or 404 if the
-  id does not exist)
+- `POST /auth/register` creates a user with a bcrypt-hashed password
+- `POST /auth/login` returns a JWT access token (15 min by default)
+- `GET /debts` lists the authenticated user's debts
+- `POST /debts` creates a debt for the authenticated user
+- `DELETE /debts/:id` removes one of the authenticated user's debts
 - `POST /paydown` accepts `{debts, budget, strategy}` and returns
-  the schedule from the avalanche or snowball calculator
+  the schedule (avalanche or snowball)
 - Centralized JSON error envelope across every error response
 - Zod validation in front of every input-taking route
 - Pino structured logging plus morgan request logging
-- CORS pinned to the configured frontend origin
-- Env config validated at boot with Zod (process exits with a
-  diagnostic if anything is missing or wrong)
-- MongoDB persistence via Mongoose (v6); UUID `_id` so the API
-  contract still surfaces `id: string (uuid)`
-- Graceful shutdown on SIGTERM/SIGINT (drains in-flight requests,
-  closes Mongo cleanly)
-- 35 tests across the calculator, services, and end-to-end via
-  supertest, all running against an ephemeral
-  mongodb-memory-server instance
+- CORS pinned to the configured frontend origin (array form)
+- Helmet for HTTP security response headers
+- Rate limiting on `/auth/register` and `/auth/login` (5 per 15 min)
+- Env config validated at boot with Zod
+- MongoDB persistence via Mongoose with UUID `_id`s
+- Graceful shutdown on SIGTERM/SIGINT
+- 38 tests across the calculator, services, and end-to-end via
+  supertest, all running against an ephemeral mongodb-memory-server
+  instance
 
 ## What this version does NOT include
 
 Belongs to later versions:
 
-- User accounts or login - v7
-- Rate limiting and helmet security headers - v7
+- Refresh tokens (deferred — v7 has access tokens only)
+- Account-based lockout (deferred — current rate limit is IP-based)
+- Password reset flow
+- Email verification on register
 - Production deployment - v8
 - AI-assisted debt extraction - v8
 - Staff dashboard - v8
@@ -64,12 +67,18 @@ path is MongoDB Atlas's free M0 tier:
 6. Append a database name before the `?`:
    `.../debt-paydown-planner?retryWrites=...`
 
+You also need a JWT signing secret. Generate one:
+
+```
+openssl rand -hex 64
+```
+
 Then:
 
 ```
 cd v5-backend
 cp .env.example .env
-# edit .env: paste your real MONGODB_URI
+# edit .env: paste your real MONGODB_URI and JWT_SECRET
 npm install
 npm run dev
 ```
@@ -87,9 +96,13 @@ npm run typecheck   # tsc --noEmit
 ```
 
 Tests use `mongodb-memory-server`, which starts an ephemeral local
-MongoDB. No Atlas needed for tests; `MONGODB_URI` is not read by
-the test process. First run downloads ~80MB of MongoDB binaries
-(once); subsequent runs use the cache.
+MongoDB. No Atlas needed for tests; the suite never reads a real
+`MONGODB_URI`. First run downloads ~80MB of MongoDB binaries (once);
+subsequent runs use the cache.
+
+Rate limiting is skipped when `NODE_ENV=test` so the supertest suite
+can register and log in many users without tripping the per-IP
+budget. See NOTES for the rationale.
 
 ## Endpoints
 
@@ -100,10 +113,38 @@ $ curl http://localhost:3001/health
 {"status":"ok"}
 ```
 
-### `GET /debts`
+### `POST /auth/register`
 
 ```
-$ curl http://localhost:3001/debts
+$ curl -X POST http://localhost:3001/auth/register \
+    -H "Content-Type: application/json" \
+    -d '{"email":"you@example.com","password":"some-password"}'
+{"id":"...","email":"you@example.com","createdAt":"..."}
+```
+
+Returns 201. Duplicate email returns 409. Invalid body returns 400.
+
+### `POST /auth/login`
+
+```
+$ curl -X POST http://localhost:3001/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"you@example.com","password":"some-password"}'
+{"user":{"id":"...","email":"you@example.com","createdAt":"..."},"token":"eyJ..."}
+```
+
+Returns 200 with a JWT access token. Wrong password or nonexistent
+email returns 401 (same shape, same timing — login does not leak
+which case it was).
+
+### `GET /debts`
+
+Requires a Bearer token from `/auth/login`. Returns only the
+authenticated user's debts.
+
+```
+$ curl http://localhost:3001/debts \
+    -H "Authorization: Bearer <token>"
 []
 ```
 
@@ -111,29 +152,33 @@ $ curl http://localhost:3001/debts
 
 ```
 $ curl -X POST http://localhost:3001/debts \
+    -H "Authorization: Bearer <token>" \
     -H "Content-Type: application/json" \
     -d '{"name":"Visa","balance":5000,"rate":20,"minPayment":100}'
 {"id":"...","name":"Visa","balance":5000,"rate":20,"minPayment":100}
 ```
 
-Validation rejects missing fields, wrong types, negative balances,
-and unrecognized keys with `400 validation_error` plus the Zod
-issues array.
+The debt is automatically scoped to the authenticated user. The
+internal `userId` field is never returned.
 
 ### `DELETE /debts/:id`
 
 ```
-$ curl -X DELETE http://localhost:3001/debts/<uuid>
+$ curl -X DELETE http://localhost:3001/debts/<uuid> \
+    -H "Authorization: Bearer <token>"
 # 204 No Content
 ```
 
-Returns `404 not_found` if the id does not exist. Returns
-`400 validation_error` if the id is not a valid UUID.
+Returns `404 not_found` if the id does not exist OR belongs to
+another user. Same response either way to avoid leaking ownership.
 
 ### `POST /paydown`
 
+Requires auth (the calculator should not be drivable anonymously).
+
 ```
 $ curl -X POST http://localhost:3001/paydown \
+    -H "Authorization: Bearer <token>" \
     -H "Content-Type: application/json" \
     -d '{
       "debts": [
@@ -153,8 +198,8 @@ Returns the discriminated-union shape from v4's calculator: either
 v5-backend/
   package.json                 - deps + scripts
   tsconfig.json                - strict + nodenext + ESM
-  vitest.config.ts             - setupFiles + placeholder MONGODB_URI
-  .env.example                 - PORT, MONGODB_URI, CORS_ORIGIN, LOG_LEVEL, NODE_ENV
+  vitest.config.ts             - setupFiles + placeholder env vars
+  .env.example                 - PORT, MONGODB_URI, JWT_SECRET, JWT_EXPIRES_IN, CORS_ORIGIN, LOG_LEVEL, NODE_ENV
   src/
     server.ts                  - boot: connect Mongo, listen, graceful shutdown
     app.ts                     - buildApp(): wires middleware + router
@@ -163,32 +208,39 @@ v5-backend/
     db/
       mongo.ts                 - connect/disconnect helpers (v6)
     routes/
-      index.ts                 - mounts /health, /debts, /paydown
-      debts.routes.ts          - GET/POST/DELETE
-      paydown.routes.ts        - POST /paydown
+      index.ts                 - mounts /health, /auth, /debts, /paydown
+      auth.routes.ts           - register/login with rate limit (v7)
+      debts.routes.ts          - GET/POST/DELETE behind requireAuth (v7)
+      paydown.routes.ts        - POST /paydown behind requireAuth (v7)
     controllers/
-      debts.controller.ts      - thin async handlers (v6)
+      auth.controller.ts       - thin async glue for register/login (v7)
+      debts.controller.ts      - thin async handlers (v6/v7)
       paydown.controller.ts    - thin: req -> service -> res
     services/
-      debts.service.ts         - Mongoose-backed (v6)
+      auth.service.ts          - bcrypt + jwt with dummy-hash defense (v7)
+      debts.service.ts         - Mongoose-backed, scoped by userId (v6/v7)
       paydown.service.ts       - strategy dispatch
     models/
-      debt.model.ts            - Mongoose schema with UUID _id (v6)
+      debt.model.ts            - Mongoose schema with UUID _id, userId field (v6/v7)
+      user.model.ts            - Mongoose User schema (v7)
     middleware/
       errorHandler.ts          - 4-arg express error middleware
       requestLogger.ts         - morgan piped through pino
       validate.ts              - validate(source, schema) factory
+      requireAuth.ts           - JWT verification, attaches userId (v7)
+      rateLimit.ts             - express-rate-limit on auth endpoints (v7)
     validators/
-      debts.schema.ts          - newDebtSchema, debtSchema, debtIdParamSchema, exported types
-      paydown.schema.ts        - paydownRequestSchema, strategySchema, Strategy type
+      debts.schema.ts          - newDebtSchema, debtSchema, debtIdParamSchema
+      paydown.schema.ts        - paydownRequestSchema, strategySchema
+      auth.schema.ts           - registerSchema, loginSchema (v7)
     errors/
-      AppError.ts              - AppError, NotFoundError, ValidationError
+      AppError.ts              - AppError, NotFoundError, ValidationError, UnauthorizedError, ConflictError
     utils/
       paydownCalculator.ts     - pure math, ported from v4
       logger.ts                - pino instance
     test/
       setupMongo.ts            - vitest hook for mongodb-memory-server (v6)
     types/
-      index.ts                 - re-exports Debt, NewDebt, Strategy from validators;
-                                 ScheduleEntry, ScheduleMonth, PaydownResult
+      index.ts                 - re-exports types from validators and models
+      express.d.ts             - augments Request with userId? (v7)
 ```

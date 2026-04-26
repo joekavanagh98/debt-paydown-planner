@@ -1,11 +1,13 @@
 # v5-backend Notes
 
-v5 was the in-memory backend. v6 modifies v5 in place to swap that
-in-memory Map for MongoDB via Mongoose. CLAUDE.md calls v6 out as
-the one version that does not get its own folder. Everything below
-that mentions storage/persistence is from v6 unless it says
-otherwise; the section "v6: Mongoose" at the bottom collects the
-v6-specific decisions.
+v5 was the in-memory backend. v6 swapped that for MongoDB via
+Mongoose. v7 added auth (JWT + bcrypt), per-user scoping on debts,
+helmet, and rate limiting. All three live in the same folder
+because v6 and v7 modify v5 in place per the project roadmap.
+
+The original "everything below" sections describe v5's bones. The
+"v6: Mongoose" and "v7: Authentication and security" sections at
+the bottom collect the version-specific decisions and tradeoffs.
 
 ## Project structure
 
@@ -244,21 +246,24 @@ linking a request log to its error log. Adding a request-id
 middleware (uuid per request, attached to the pino child logger)
 would let me grep one id across access log, app log, and error log.
 
-### Helmet is missing
+### Helmet is missing. **Fixed in v7.**
 
-CLAUDE.md mentions helmet for security headers in v7's plan. It
-applies to v5 too. One `app.use(helmet())` covers a dozen
-sensible headers. Not in yet because v7 owns the security
-hardening pass.
+CLAUDE.md mentioned helmet for security headers in v7's plan. v7
+adds `app.use(helmet())` at the top of the middleware stack. The
+default config covers X-Content-Type-Options, X-Frame-Options,
+Strict-Transport-Security (in production), a baseline
+Content-Security-Policy, and about a dozen other response headers.
 
-### CORS string vs array
+### CORS string vs array. **Fixed in v7.**
 
-`cors({ origin: env.CORS_ORIGIN })` with a string echoes that
-origin on every response, regardless of the request's Origin
-header. The browser still enforces the match. Switching to an
-array (`origin: [env.CORS_ORIGIN]`) would only echo if the request
-matches, which surfaces intent more clearly. Cosmetic for v5; will
-probably switch in v7 alongside the rest of the security pass.
+v5 used `cors({ origin: env.CORS_ORIGIN })` with a string, which
+unconditionally echoes the configured value regardless of the
+request's Origin. v7 switches to the array form
+(`cors({ origin: [env.CORS_ORIGIN] })`) so cors only echoes the
+allowed origin when the request matches it. Same outcome in
+practice (the browser enforces either way), but the array form
+makes intent explicit on the wire and is easy to extend with a
+second deploy URL.
 
 ### Schemas duplicate the types. **Fixed in v6.**
 
@@ -394,3 +399,109 @@ queries mid-write.
   Libraries like zod-mongoose or mongoose-to-zod could derive one
   from the other. Adding a dependency to remove ~5 lines of
   duplication isn't worth it yet.
+
+## v7: Authentication and security
+
+### What v7 adds
+
+- POST /auth/register and POST /auth/login
+- bcrypt password hashing (cost 12)
+- JWT access tokens (15 min default expiration)
+- requireAuth middleware enforcing `Authorization: Bearer <token>`
+- /debts and /paydown require auth
+- /debts scoped per user (cross-user isolation)
+- helmet for HTTP security headers
+- CORS array form
+- Rate limiting on /auth/register and /auth/login (5 per 15 min per IP)
+
+### bcrypt cost 12
+
+Cost 12 is roughly 250ms per hash on a modern laptop. CLAUDE.md
+sets a cost-10 floor; 12 is the modern default and the right
+balance between brute-force resistance and login-path latency. Any
+higher and login starts feeling sluggish; any lower and offline
+attacks against a leaked password database get cheaper.
+
+### Dummy-hash defense in login
+
+If the email isn't registered, login still runs `bcrypt.compare`
+against a dummy hash that never validates. Same wall-clock time
+either way. Without this, an attacker could distinguish "no such
+user" from "wrong password" by timing the 401 response (the
+no-such-user path would skip bcrypt and return in <5ms). The dummy
+hash forces both branches to take ~250ms.
+
+### No refresh tokens (deliberate)
+
+v7 has access tokens only. No refresh-token flow. When the 15-min
+token expires, the user logs in again.
+
+The full refresh-token implementation needs token revocation, a
+blacklist or version stamp, secure refresh-token storage on the
+client, rotation on every refresh, and per-device session
+management. That is a real design surface, and v7's scope is
+"auth that works." Refresh tokens are deferred to v8+ when the
+deployed app's UX makes the short window painful enough to justify
+the complexity.
+
+The shorter-window tradeoff: a stolen access token is valid for
+the full window. Keeping the window short (15 min) bounds the
+blast radius without needing revocation infrastructure.
+
+### IP-based rate limit, not account-based
+
+The 5-per-15-min rate limit on /auth/register and /auth/login is
+keyed on the client IP. A distributed attacker rotating source
+IPs through a botnet or proxy network defeats it.
+
+The proper defense is account-based lockout: track failed attempts
+per email, lock the account (or require additional verification)
+after N misses regardless of source IP. v7 ships with the
+IP-based defense because it covers the common single-host
+brute-force case and ships in one library; account-based lockout
+needs a Mongo-backed counter, expiry logic, and unlock UX, which
+push it into v8 territory.
+
+### Rate limit skipped in test mode
+
+The 38-test supertest suite registers and logs in many users
+back-to-back from the same loopback IP, well above the 5/15min
+budget. The limiter calls `skip: () => env.NODE_ENV === "test"`
+so the suite runs cleanly. The rate limit's actual behavior under
+load isn't covered by the suite as a result.
+
+A future commit can add a dedicated test that builds a separate
+Express app with a tighter limit (e.g. 2/15min) and asserts the
+3rd request gets a 429. Not in v7 because it would inflate this
+commit and the cost-vs-coverage trade leans toward "worth it
+later."
+
+### Tests landed at end of v7 rather than per-commit
+
+In a real production codebase I would write the auth service tests
+alongside the service, not after. Per-commit tests would have
+caught typo-class issues and confirmed each layer worked in
+isolation before the next layer landed on top.
+
+For v7's pace I bundled all the tests into a single test commit at
+the end. The trade-off was faster iteration through the auth
+surface against the discipline of TDD. Mitigation: keeping the
+test commit separate from the feature commits makes the gap visible
+in git history rather than hidden inside a "wrote feature, also
+tests" diff. Future versions should match the per-commit test
+pattern v6 used.
+
+### What v7 does not do
+
+- No password reset flow (no email channel set up yet, deferred to v8)
+- No email verification on register (same reason)
+- No session revocation. A leaked token is valid until expiration;
+  there's no blacklist or version stamp to invalidate it sooner.
+  Proper fix involves a server-side token store or short-lived
+  access + refresh tokens.
+- No CSRF protection. JWT travels in the Authorization header, not
+  a cookie, so the typical CSRF attack vector doesn't apply.
+  Switching to cookie-based auth (which v8 might consider for
+  better deployment ergonomics) would put CSRF back on the table.
+- No request-id correlation. Still on the v6 carry-forward list;
+  not closed in v7 either.

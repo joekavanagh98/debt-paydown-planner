@@ -28,7 +28,7 @@ from the directory tree.
 | [v4](v4-tailwind/) | Tailwind CSS v4, Recharts | CSS-first Tailwind config, mobile-first responsive layout, avalanche and snowball comparison with per-debt balance charts, Vercel deploy config | Complete |
 | [v5](v5-backend/) | Express 5, TypeScript, Zod | Layered backend (routes/controllers/services), centralized error handling and JSON error envelope, Zod request validation, env config validated at boot, pino + morgan logging, CORS, supertest end-to-end tests | Complete |
 | [v6](v5-backend/) | MongoDB Atlas, Mongoose | Persistent storage in v5-backend (in-place modification), UUID `_id`, mongodb-memory-server for tests, graceful shutdown, schema/type consolidation via z.infer | Complete |
-| v7 | JWT, bcrypt | Authentication, rate limiting, security headers, CORS pinning | Planned |
+| [v7](v5-backend/) | JWT, bcrypt, helmet, express-rate-limit | JWT auth in v5-backend (in-place modification), bcrypt hashing with constant-time-ish login defense, per-user scoped debts, helmet security headers, IP-based rate limiting on auth endpoints, CORS array form | Complete |
 | v8 | Deployed + Claude API | Production deployment, AI-assisted debt extraction from uploaded statements, staff dashboard | Planned |
 
 ## How to run
