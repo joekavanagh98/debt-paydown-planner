@@ -12,6 +12,11 @@ export default defineConfig({
     setupFiles: ["./src/test/setupMongo.ts"],
     env: {
       MONGODB_URI: "mongodb://placeholder/test",
+      // Test-only secret. Long enough to satisfy the schema (>=32
+      // chars) but obviously not for production. Tests sign and
+      // verify against this value.
+      JWT_SECRET: "test-secret-test-secret-test-secret-test-secret",
+      JWT_EXPIRES_IN: "15m",
     },
   },
 });

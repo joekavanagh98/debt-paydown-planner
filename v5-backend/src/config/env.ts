@@ -20,6 +20,16 @@ const envSchema = z.object({
   // tests don't need MONGODB_URI in the shell environment either.
   MONGODB_URI: z.string().min(1),
 
+  // No default. Generate with `openssl rand -hex 64`. Min 32 chars
+  // because anything shorter is below the rule-of-thumb entropy
+  // floor for HS256 signing keys.
+  JWT_SECRET: z.string().min(32),
+
+  // ms-style duration (15m, 1h, 2d). Short by design: v7 has no
+  // refresh-token flow, so a too-long expiry would mean a stolen
+  // token is valid for too long.
+  JWT_EXPIRES_IN: z.string().default("15m"),
+
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
 
   LOG_LEVEL: z
