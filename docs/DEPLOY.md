@@ -14,6 +14,10 @@ updated on the backend with the Vercel URL.
 - Render account
 - Vercel account
 - Atlas Network Access set to `0.0.0.0/0`
+- Anthropic API key (https://console.anthropic.com) — used by the
+  v8 phase 3 extraction endpoint. Use a project key with monthly
+  spend limits set, not a personal key. Free trial credits cover
+  testing; sustained use needs a paid account.
 
 The Atlas allowlist is `0.0.0.0/0` because Render's free-tier egress
 IPs aren't fixed and Vercel's aren't either. This is a known v8
@@ -33,7 +37,7 @@ Steps:
 
 1. Render → New → Blueprint
 2. Connect GitHub, select the repo
-3. Render reads `render.yaml` and prompts for the three `sync: false`
+3. Render reads `render.yaml` and prompts for the four `sync: false`
    env vars (the others are pinned in the yaml):
    - **JWT_SECRET**: generate fresh in your terminal:
      ```
@@ -49,6 +53,11 @@ Steps:
    - **CORS_ORIGIN**: temporary placeholder
      `https://placeholder.vercel.app`. The real Vercel URL goes here
      in step 3 below.
+   - **ANTHROPIC_API_KEY**: paste a key from
+     https://console.anthropic.com. Use a project key with spend
+     limits set so a runaway frontend can't drain a personal key.
+     The key is required for /debts/extract; without it the service
+     fails at boot rather than 500-ing on every extraction request.
 4. Click Apply / Deploy
 5. Wait 3-5 minutes for the first build (cold; subsequent deploys
    are faster because the dependency cache is warm)
@@ -194,6 +203,18 @@ time but worth knowing if you change `CORS_ORIGIN` while a real
 user is mid-request — they'll see a brief outage during the
 restart.
 
+### ANTHROPIC_API_KEY needs spend limits, not blank check
+
+Anthropic project keys can be created with monthly spend caps. Set
+one. The `/debts/extract` endpoint is rate-limited per user, but
+nothing stops a misconfigured frontend (or a future bug) from
+spamming the model. A spend cap is the last line of defense and
+costs nothing to set.
+
+Personal keys with no caps work but expose every dollar in your
+account; if the key leaks the bill follows. Project keys are
+free, isolated, and revocable.
+
 ## Troubleshooting
 
 Specific failures hit while bringing this project up. Future-self,
@@ -257,3 +278,33 @@ If `JWT_SECRET` is fine and 401s are still happening, the access
 token may have been signed with an older secret value. The frontend
 shows "Your session expired" automatically (v8 phase 1's 401 handler).
 Sign back in to get a token signed with the current secret.
+
+### /debts/extract returns 500 instead of extracting
+
+The `ANTHROPIC_API_KEY` env var is missing or wrong on Render.
+The env schema requires it, so the service should fail at boot
+rather than reaching this state, but if you've stripped the
+schema validation or the key is set to an empty string, requests
+hit a runtime SDK error instead.
+
+Check Render logs for an Anthropic SDK auth error. Re-paste the
+key from https://console.anthropic.com → API Keys, save, let
+Render redeploy.
+
+### /debts/extract returns 502 extraction_failed
+
+The model returned something we couldn't parse into the expected
+shape. Common causes:
+
+- The user pasted text with no debts in it. Empty `debts: []`
+  array is not an error and returns 200; this is something
+  weirder.
+- The model refused (returned a text response, not a tool call).
+  Sometimes happens with adversarial input that trips a safety
+  filter.
+- A transient model glitch. Retry usually works.
+
+The frontend's DebtExtractor maps this to "Couldn't extract debts
+from that text. Try a clearer paste, or add them manually." which
+is the right user-facing line. The 502 itself is fine; nothing to
+fix on the backend.

@@ -50,3 +50,7 @@ services:
         sync: false
       - key: CORS_ORIGIN
         sync: false
+      # Anthropic API key for the v8 phase 3 extraction endpoint.
+      # Use a project key with spend limits set, not a personal key.
+      - key: ANTHROPIC_API_KEY
+        sync: false

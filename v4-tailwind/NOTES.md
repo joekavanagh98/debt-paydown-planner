@@ -441,3 +441,134 @@ add the four fixes above in one pass.
   AuthContext file split (above).
 - **`react-hooks/set-state-in-effect` ESLint rule** drove the App
   / SignedInApp + key remount split (above).
+
+## v8 Phase 3: AI debt extraction (frontend)
+
+The DebtExtractor component sits above the manual DebtForm and
+drives the v8 phase 3 user flow: paste statement text, hit "Parse
+with AI," review the extracted debts as editable cards, save each
+one (or all at once) through the same `addDebt` callback the
+manual form uses.
+
+### Three-state component
+
+The component renders one of three states based on local state:
+
+1. **Input mode** (`debts === null`): textarea + "Parse with AI"
+   button. The textarea's `maxLength` matches the backend's
+   5000-character cap on `extractRequestSchema.text`, and a
+   counter at the bottom flips red when the user hits the limit.
+   Button is disabled when the text is empty or a request is in
+   flight.
+2. **Empty-result mode** (`debts is []`): a soft amber card noting
+   that Claude found no debts and pointing the user at the manual
+   form below. "Try different text" resets to input mode.
+3. **Review mode** (`debts has entries`): each row is a small card
+   with editable name/balance/rate/minPayment fields plus an
+   "Add this debt" button. Saved rows go to a green-tinted
+   read-only state with the inputs disabled.
+
+State machine for each row: `ready` → `saving` → (`saved` |
+`failed`). A `failed` row goes back to editable so the user can
+fix and retry. A `saved` row is locked because re-saving the same
+debt would create a duplicate.
+
+### Review-before-save is the third defense layer
+
+The backend's prompt-injection defense is two layers (delimiter
+wrapping plus system-prompt hardening, documented in
+v5-backend/NOTES). The third is here: the user has to physically
+click "Add this debt" on each row before it persists. Even if the
+model fabricated debts, an alert user reviewing the list catches
+them before storage.
+
+This is also why Save All is sequential, not parallel. A user who
+paused mid-save because they noticed a fabricated entry should
+not have their previous reviews already saved and the rest still
+pending in flight.
+
+### Why above DebtForm, not below
+
+The AI option goes first because it is the answer to "I have a
+statement, how do I get my debts in?" The manual form is the
+fallback for users who don't have statement text on hand.
+
+The two flows feed the same `addDebt` callback in App.tsx, which
+is the same callback the localStorage flow used in v8 phase 1
+before the API replaced it. Adding AI extraction didn't require
+changing addDebt at all.
+
+### Sequential saves, not parallel
+
+Save All iterates rows with `await onAddDebt(...)` in a loop.
+Three reasons not to `Promise.all`:
+
+- Server-friendliness: 5 simultaneous POST /debts is rude even on
+  free tier; sequential at human pace is fine.
+- Predictable display order: the saved-debts list grows in
+  extraction order, which matches the order the user is reviewing.
+  Parallel saves can finish out of order on slow connections.
+- Failure isolation: if row 3 fails, rows 1 and 2 already saved,
+  rows 4+ stay ready. With `Promise.all`, one rejection rejects
+  the whole batch and the user has to figure out which ones
+  succeeded.
+
+### Blank minPayment becomes 0
+
+v5-backend's NewDebt schema requires `minPayment` as a number. The
+extraction response makes it optional because not all source
+statements state a minimum. The UI bridges this gap by treating
+an empty input as 0 at save time.
+
+The v3+ calculator interprets 0 as "no explicit minimum, use the
+fallback rule (interest + 1% of principal, floored at $25)." So
+blank-becomes-0 has the same downstream behavior as if the user
+had left the field unfilled all the way through. The placeholder
+text on the input reads "Leave blank if not stated" rather than
+"Leave blank to use fallback" because "fallback" is jargon and
+the data semantics ("not stated") match the user's mental model
+better.
+
+### Error mapping at the call site
+
+Five outcomes the user can hit:
+
+- **`rate_limited`** (429 from `extractionRateLimit`): "Too many
+  extractions. Try again in an hour."
+- **`extraction_failed`** (502 from `ExtractionError`): "Couldn't
+  extract debts from that text. Try a clearer paste, or add them
+  manually below."
+- **`validation_error`** (400 from Zod on the body): "Text was
+  empty or over the 5000-char limit." Verified the code string
+  against v5-backend/src/errors/AppError.ts to make sure it
+  actually matches what the backend emits, not a guess.
+- **401**: handled globally by the AuthProvider's session-expired
+  flow from phase 1. The DebtExtractor doesn't need a code-specific
+  message because the user is about to be unmounted.
+- **Anything else**: generic "Something went wrong. Check your
+  connection and try again."
+
+Mapping lives in a `messageFor(err)` helper inside the same file.
+Could be extracted into a shared lookup if more screens grow
+similar mappings; deferred until that's actually true.
+
+### What v8 Phase 3 frontend still does not do
+
+- **PDF / image upload**. Text input only. The textarea is the
+  only input affordance. Adding file upload would need a multipart
+  request shape on the backend too; deferred to v9+.
+- **Drag-and-drop paste**. The textarea accepts paste like any
+  textarea, but there's no drop zone for screenshot files.
+- **Statement format hints in the placeholder**. The textarea
+  placeholder says "Paste a credit card or loan statement here..."
+  but doesn't show an example. A subtle small-text example below
+  the input would help first-time users; not built.
+- **Prefill saved debts as already-saved on second extraction**.
+  If the user pastes the same statement twice, the rows show up
+  as ready to save again (and would create duplicates if added).
+  Real product would dedupe by name+balance match; punted.
+- **Optimistic save UI**. The "Saving..." button waits for the
+  server round-trip. Could optimistically render the row as saved
+  and roll back on failure, but the Render free tier's latency
+  variance makes the optimistic version more confusing than
+  reassuring.

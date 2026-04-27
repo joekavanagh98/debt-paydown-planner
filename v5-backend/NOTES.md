@@ -603,3 +603,199 @@ deploy guide as anticipatory advice.
   the default `test` database. Verified in production.
 
 That's the v8 Phase 2 record.
+
+## v8 Phase 3: AI debt extraction
+
+The backend exposes `POST /debts/extract`, a Claude-backed endpoint
+that takes statement text and returns a list of structured debt
+objects for the frontend to review before saving. Live behind
+`requireAuth` and a per-user rate limit. Lives entirely server-side
+behind the existing /debts router.
+
+### Tool use, not prompt-only JSON
+
+The extraction service uses Anthropic's tool-use feature instead of
+asking the model for JSON in a free-text reply. The tool's
+`input_schema` constrains the model up front: the API rejects
+output that doesn't match the schema before we ever see it, which
+catches a class of hallucinations (extra keys, wrong types, model
+prose mixed in) automatically.
+
+Prompt-only JSON works in many models but drifts. With tool use,
+the model is required to emit a structured tool-call payload or
+nothing at all. `tool_choice: { type: "tool", name: "save_debts" }`
+forces it.
+
+We Zod-parse the tool input afterward anyway. The JSON Schema can't
+express "balance must be positive" or "name max 40 chars"; Zod
+does. Defense in depth.
+
+### Why claude-haiku-4-5
+
+Three reasons:
+
+- Cost: Haiku is the cheapest in the 4.x family. Extraction is a
+  high-frequency feature (a user might paste several statements);
+  Sonnet pricing would put real friction on the rate limit budget.
+- Latency: Haiku responds noticeably faster than Sonnet. The UI
+  shows "Parsing..." during the call; shorter is better.
+- Capability: Haiku 4.5 is plenty for structured-extraction-from-text.
+  Smoke tested with a multi-debt statement plus a deposit-account
+  decoy line; it returned the right debts and skipped the decoy on
+  the first attempt.
+
+Pinned to the dated `claude-haiku-4-5-20251001` snapshot rather
+than the floating `claude-haiku-4-5` alias. Snapshot pinning means
+production behavior doesn't shift when an alias rolls forward.
+Trade-off: model improvements don't reach production until a
+deliberate version bump.
+
+### Prompt design choices
+
+The system prompt is short on purpose. Each line earns its place:
+
+- **"balance/rate/minPayment are numbers"**: LLMs sometimes return
+  `"$5000"` (string, with currency symbol) because that's how
+  source statements display the value. Forcing numbers at the
+  prompt level keeps the parsing on the model's side.
+- **"rate as 24, not 0.24"**: APR is conventionally written as a
+  percent, but models occasionally normalize to a decimal because
+  they were trained on math contexts that prefer fractions. Naming
+  the convention explicitly stops the second guess.
+- **"skip non-debt lines"**: deposit accounts, transactions, and
+  page headers all look statement-like. Without the rule the model
+  pulls them in as zero-balance entries.
+- **"empty array if no debts"**: prevents the model from
+  hallucinating a default debt to fill the schema.
+- **`minPayment` optional**: not every statement shows it. Forcing
+  the model to invent a value would either pollute the data or
+  push the model toward refusing the entire extraction.
+
+Refining the prompt is cheap and the model honors instructions
+faithfully when they're concrete. These choices held up in the
+live smoke test.
+
+### Prompt-injection defense
+
+The threat model is unusual for an LLM-backed feature: the user is
+both the attacker and the victim. Debts are scoped per user, so
+malicious extracted output only pollutes the attacker's own data.
+There is no cross-user attack surface and no privilege escalation
+to gain. The defense is still worth doing because:
+
+- The user can be tricked by their own paste (a statement that
+  contains adversarial text added by a third party).
+- Tooling that handles user input as instructions sets a poor
+  habit if it ever gets reused for a higher-stakes feature.
+
+Three defense layers are wired:
+
+**Layer 1: delimiter wrapping.** User text is wrapped in
+`<statement>` tags before being sent to the model. The system
+prompt names this delimiter and labels its contents as data.
+
+**Layer 2: system prompt hardening.** Two lines explicitly tell
+the model the wrapped contents are data, not instructions, and
+to ignore any instruction-shaped lines that appear inside.
+
+**Layer 3: review-before-save.** The endpoint returns the
+extracted debts; nothing persists until the user clicks "Add this
+debt" on each row in the frontend's review UI. Even if layers 1
+and 2 fail, the user has to physically confirm a fabricated debt
+before it lands in storage.
+
+What was considered and deferred:
+
+- **Output-vs-input validation** (re-prompt the model with the
+  output and ask if it looks coherent). Adds latency and token
+  cost; the review-before-save layer covers the same outcome at
+  zero model cost.
+- **Constitutional AI patterns** (a second model call evaluating
+  the output for instruction-following). Same cost concern, plus
+  more moving parts.
+- **Delimiter-collision protection.** A user paste containing a
+  literal `</statement>` tag could close the wrapper early. The
+  defense is to strip or escape the literal in user input before
+  wrapping. Not implemented; the failure mode is the model would
+  treat trailing input as instructions, but layers 2 and 3 still
+  catch the abuse. Documented for a future hardening pass.
+
+### Per-user rate limit, keyed on userId
+
+`extractionRateLimit` in `src/middleware/rateLimit.ts` allows 10
+requests per user per hour, keyed on `req.userId` rather than IP.
+
+Why userId: the endpoint is behind `requireAuth`, so userId is
+always set by the time the limiter runs. IP-keying would let one
+user share quota with anyone else on their network (false
+friction) and let one user bypass quota by switching networks
+(false ceiling). userId is the unit of cost so it's the unit of
+quota.
+
+Why 10/hour: realistic use is 1-3 extractions per session — paste
+a statement, review, save. 10/hour is generous enough to avoid
+friction during demos and normal use, tight enough to bound the
+worst-case cost. At Haiku 4.5 pricing, 10 requests per hour for
+24 hours is roughly $0.36/user/day in the worst case. Bursty
+real-world usage (statement-paste a few times a week) sits well
+below that.
+
+The keyGenerator falls back to `ip:<ip>` if userId is somehow
+unset. Defensive: should never fire in practice, but returning an
+empty string would defeat the limiter, and an IP fallback at least
+preserves the rate limit if a future route gets misconfigured.
+
+Skipped in test mode for the same reason `authRateLimit` is.
+
+### Anthropic SDK is mocked, not stubbed, in tests
+
+Vitest mocks `@anthropic-ai/sdk` per-file via `vi.mock`. The mock
+is a class because the SDK's default export is invoked with `new`,
+and `vi.fn(() => ...)` arrow factories aren't constructable.
+`mockCreate` is hoisted via `vi.hoisted` so it's available before
+any imports.
+
+App-level supertest tests (`app.test.ts`) deliberately don't mock
+the SDK. They cover only the auth and validation layers of
+`/debts/extract`, which fail before the controller runs and so
+never reach the SDK. The success-case path stays in
+`extraction.service.test.ts` where the mock is set up. Splits the
+SDK setup so it lives in exactly one place.
+
+### What didn't fire (anticipated gotchas that turned out fine)
+
+- **Token type confusion**: the model returned plain numbers from
+  the smoke test, no string-vs-number ambiguity to handle.
+- **Decimal-vs-integer rate**: came back as 21.99 and 18.49 (not
+  0.2199 / 0.1849) on the first try, matching the prompt rule.
+- **Deposit-account false positive**: a Bank of America Checking
+  line in the smoke input was correctly skipped.
+- **Missing minPayment handling**: when the source statement
+  didn't list a minimum, the field was omitted from the response
+  rather than invented. Optional Zod field accepted it cleanly.
+
+### What v8 Phase 3 still does not do
+
+- **PDF upload**. Text-input only for v8. PDF support would need
+  either the Anthropic Files / vision API (sends the PDF binary
+  as part of the prompt, model reads it natively) or an OCR
+  pre-step. Documented as a deferred feature; v9+ if user demand
+  warrants. Adding it later is additive; the existing /debts/extract
+  endpoint stays.
+- **Image upload (statement screenshots)**. Same reason as PDF.
+  Vision API would handle this too.
+- **Streaming responses**. The endpoint blocks for the model's
+  full response (1-3 seconds typical). Streaming the tool-call
+  output incrementally would let the frontend render rows as they
+  arrive. Negligible latency win for a 3-second call; not built.
+- **Cost telemetry per user**. The rate limit bounds spend, but
+  the app doesn't track per-user token usage. A real product
+  rolling AI features would expose usage in the user's settings
+  and cap by dollars not requests.
+- **Re-prompt-on-bad-output**. If Zod rejects the tool input, the
+  service throws ExtractionError immediately. A retry pass with
+  feedback to the model could recover, but adds latency and token
+  cost for an edge case that hasn't fired yet.
+- **Delimiter escaping** (see Prompt-injection defense above).
+
+That's the v8 Phase 3 backend record.
