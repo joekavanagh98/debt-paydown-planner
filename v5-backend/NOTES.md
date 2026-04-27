@@ -799,3 +799,180 @@ SDK setup so it lives in exactly one place.
 - **Delimiter escaping** (see Prompt-injection defense above).
 
 That's the v8 Phase 3 backend record.
+
+## v8 Phase 4: Staff dashboard
+
+The backend exposes `GET /staff/summary`, an aggregate-only endpoint
+gated by `requireAuth + requireStaff`. Returns user counts, debt
+totals, average APR, and a debt-count distribution. Nothing in the
+response identifies an individual user. Promotion to staff is a
+manual database operation, not a self-service flow.
+
+### Promotion is manual on purpose
+
+There is no `/auth/promote` route. Granting staff is a privileged
+operation that affects who can read aggregate data; self-service
+promotion would require a separate admin role to gate it, and a
+capstone with one staff user doesn't earn that ladder.
+
+The flow: a developer with access to the Atlas cluster runs an
+update on the `users` collection, setting `role: "staff"` for a
+specific email. Two ways to do it.
+
+**Option A: mongosh against Atlas.** From a shell with the same
+`MONGODB_URI` the backend uses:
+
+```sh
+mongosh "$MONGODB_URI"
+```
+
+Then in the shell:
+
+```js
+db.users.updateOne(
+  { email: "person@example.com" },
+  { $set: { role: "staff" } }
+)
+```
+
+The matched/modified count comes back inline. A modified count of 1
+means the role flipped; 0 means the email didn't match (typo,
+wrong cluster, or the user hasn't registered yet).
+
+**Option B: Atlas Data Explorer UI.** For non-CLI sessions:
+
+1. Atlas dashboard, Browse Collections on the cluster
+2. Pick the database (`test` in production, `debt-paydown-planner`
+   in local dev — see "Database name mismatch" below), then `users`
+3. Filter: `{ email: "person@example.com" }`
+4. Edit the matched document, change `role` from `"user"` to
+   `"staff"`, save
+5. If the doc has no `role` field at all (legacy registration
+   before the field landed), add the key manually before saving
+
+After promotion, the affected user signs out and back in. The
+backend reads the role fresh from Mongo on every request, so a
+restart isn't required, but the frontend caches the user object
+returned at login. Re-login refreshes the cached role and the
+Planner/Staff toggle appears.
+
+### Why fresh DB lookup in requireStaff
+
+`requireStaff` queries `User.findById(req.userId)` on every
+request rather than reading the role off the JWT payload. The
+JWT only carries `userId`. Two reasons:
+
+- **Revocation**. If a staff member is later demoted, putting the
+  role in the JWT means the old token still grants staff access
+  until expiration (15 min). The DB lookup loses the cache hit but
+  gains immediate revocation.
+- **Token shape stability**. Adding role to the JWT is a breaking
+  change to existing tokens; users with valid sessions would need
+  to re-login after the deploy. Not worth the migration for a 15-
+  minute window.
+
+The cost is one extra Mongo round-trip per `/staff/*` request.
+Acceptable: staff endpoints are low-traffic (one developer
+checking a dashboard occasionally), not the hot path.
+
+### Aggregate-only invariant
+
+The `/staff/summary` response is reviewed every commit to make
+sure no field could leak individual data. Today's response carries
+totals, averages, distribution buckets, and the earliest/latest
+signup dates. Nothing identifies a user.
+
+The leak canary test (`staff/summary leak canary` in `app.test.ts`)
+seeds a user with an obviously unique email and debt name (random
+UUID tokens), hits `/staff/summary` as a staff caller, then asserts
+`JSON.stringify(res.body)` contains none of the canary tokens or
+either user id. If a future field accidentally surfaces individual
+data, the canary catches it before merge.
+
+The frontend banner ("Aggregate data only no individual customer
+information is displayed") is a soft check. The load-bearing
+guarantee is the canary test; the banner is the user-facing
+reminder.
+
+### Signup-range precision tradeoff
+
+`users.earliestSignup` and `users.latestSignup` are exact ISO
+timestamps. With developer-controlled accounts only (the v8 deploy
+has a handful of test users we created ourselves), exact dates are
+fine: nobody's privacy is implicated by knowing when our own test
+accounts registered.
+
+If v9 opens external testing or any non-developer signup flow, the
+precision becomes a soft information leak. Two mitigations to
+consider before that point:
+
+- **Month granularity**: round both timestamps to the first of the
+  month before returning. Coarser than ISO but still useful for
+  "how long has this product been collecting users."
+- **Threshold-gating**: only return the range when total users
+  exceeds some N (say, 10). Below the threshold, return null.
+  Prevents the case where one or two users could be identified by
+  their signup time.
+
+Either approach is a one-line service change; not building it now
+because the threat model doesn't apply yet, and shipping a
+defense-in-depth against a non-existent attack is the kind of
+hypothetical-future-requirement work CLAUDE.md tells me to skip.
+Documented here so the v9 work picks it up if external testing
+arrives.
+
+### Database name mismatch (carry-forward to v9)
+
+Production and local dev are pointed at different databases inside
+the same Atlas cluster:
+
+- **Production** (Render): `MONGODB_URI` ends at the cluster host,
+  with no `/<db>` path segment. Mongoose defaults the database
+  name to `test` in that case, so all production users and debts
+  live in the `test` database.
+- **Local dev**: `.env` sets the URI with `/debt-paydown-planner`
+  appended, so dev writes go to a separate, properly named
+  database in the same cluster.
+
+The v8 Phase 2 note above ("MongoDB URI database name matters
+even in production. Without it Mongoose connects but writes to
+the default `test` database. Verified in production.") flagged the
+risk but the actual production env var was set without the path
+segment, so prod ended up in `test` anyway. Both copies of the
+data are real; no migration was attempted.
+
+Practical impact today: when running staff promotion against
+production, the database in Atlas Data Explorer is `test`. When
+running it locally, the database is `debt-paydown-planner`. Same
+collection name (`users`) in both.
+
+For v9: unify by adding the `/debt-paydown-planner` path segment
+to Render's `MONGODB_URI` and migrating the existing `test`
+documents into the named database. The migration is a one-shot
+mongosh script (insertMany from `test` into `debt-paydown-planner`,
+then drop the source collections), but it's a coordinated change
+that needs the deploy URI updated in lock-step. Out of scope for
+v8; documented so v9 picks it up.
+
+### Test count after Phase 4
+
+Backend test suite is 55 tests across the existing files plus the
+Phase 4 additions (`requireStaff` middleware tests and the
+`/staff/summary` route tests including the leak canary). Suite
+runs in ~3s, same as Phase 3.
+
+### What v8 Phase 4 still does not do
+
+- **Audit log for staff access**. The dashboard logs the request
+  through morgan but doesn't write a structured audit row ("staff
+  user X read aggregates at time Y"). For a real product with
+  privileged data access, that audit trail is the compliance
+  artifact. v9+ if the dashboard surface grows.
+- **Per-staff-user permission scopes**. Today it's a binary
+  user/staff role. A real lending product would want at least
+  read-only-aggregates vs. read-individual-account, and probably a
+  third tier for ops actions. Single role is sufficient for the
+  one dashboard view in v8.
+- **Server-driven role changes via API**. As above, promotion is
+  intentionally manual. A `/auth/promote` route gated by an admin
+  role is the natural extension if a v9 admin surface needs it.
