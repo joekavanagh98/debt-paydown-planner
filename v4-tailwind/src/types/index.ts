@@ -46,6 +46,10 @@ export interface User {
   // Server returns ISO 8601 strings. Could be parsed into Date at the
   // boundary; left as string for now since nothing in v8 displays it.
   createdAt: string;
+  // v8 phase 4. New users default to "user". Promotion to "staff" is
+  // a manual Mongo update, not a self-service flow. The frontend
+  // reads role to decide whether to show the staff dashboard nav.
+  role: "user" | "staff";
 }
 
 export interface LoginResponse {
@@ -70,4 +74,30 @@ export interface ExtractedDebt {
 
 export interface ExtractionResult {
   debts: ExtractedDebt[];
+}
+
+// ---- v8 phase 4: staff dashboard types ----
+//
+// Mirror of v5-backend's StaffSummary. Aggregate-only by design;
+// every field is a number, a date string, or a bucket. Nothing
+// here identifies an individual user. Same duplication caveat as
+// the rest of the v8 type story.
+
+export interface StaffSummary {
+  users: {
+    total: number;
+    earliestSignup: string | null;
+    latestSignup: string | null;
+  };
+  debts: {
+    totalCount: number;
+    totalBalance: number;
+    averageRate: number | null;
+  };
+  debtCountDistribution: {
+    zero: number;
+    oneToTwo: number;
+    threeToFive: number;
+    sixPlus: number;
+  };
 }

@@ -8,6 +8,7 @@ import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
 import StrategyComparison from "./features/debts/StrategyComparison";
 import Summary from "./features/debts/Summary";
+import StaffDashboard from "./features/staff/StaffDashboard";
 import {
   createDebt as apiCreateDebt,
   deleteDebt as apiDeleteDebt,
@@ -41,6 +42,13 @@ interface SignedInAppProps {
 
 function SignedInApp({ user }: SignedInAppProps) {
   const { logout } = useAuth();
+
+  // Single-page view-switch instead of a router. v8 has two views
+  // and no deep-linkable URLs to surface — react-router would be
+  // more machinery than the feature earns. If a third view lands
+  // (or deep links become useful) this becomes the place to wire
+  // a router in.
+  const [view, setView] = useState<"main" | "staff">("main");
 
   const [debts, setDebts] = useState<Debt[]>([]);
   const [debtsLoading, setDebtsLoading] = useState<boolean>(true);
@@ -102,57 +110,96 @@ function SignedInApp({ user }: SignedInAppProps) {
     }
   };
 
+  const isStaff = user.role === "staff";
+  const onStaffView = view === "staff";
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-12">
         <header className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Debt Paydown Planner
+              {onStaffView ? "Staff Dashboard" : "Debt Paydown Planner"}
             </h1>
             <p className="mt-1 text-sm text-slate-600 sm:text-base">
-              List your debts and a monthly budget to see an avalanche payoff
-              plan.
+              {onStaffView
+                ? "Aggregate metrics across all users."
+                : "List your debts and a monthly budget to see an avalanche payoff plan."}
             </p>
           </div>
-          <div className="text-right text-sm text-slate-600">
+          <div className="flex flex-col items-end gap-2 text-sm text-slate-600">
             <div className="hidden sm:block">{user.email}</div>
+            {isStaff && (
+              <div className="flex gap-1 rounded-md border border-slate-300 bg-white p-0.5 text-xs shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setView("main")}
+                  className={
+                    "rounded px-2 py-1 font-medium " +
+                    (onStaffView
+                      ? "text-slate-700 hover:bg-slate-50"
+                      : "bg-slate-900 text-white")
+                  }
+                >
+                  Planner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("staff")}
+                  className={
+                    "rounded px-2 py-1 font-medium " +
+                    (onStaffView
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-700 hover:bg-slate-50")
+                  }
+                >
+                  Staff
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={logout}
-              className="mt-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
             >
               Sign out
             </button>
           </div>
         </header>
-        {debtsError && (
-          <div
-            role="alert"
-            className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-          >
-            <span>{debtsError}</span>
-            <button
-              type="button"
-              onClick={() => setDebtsError(null)}
-              className="text-xs font-semibold text-red-900 hover:underline"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-        <Summary debts={debts} />
-        <BudgetInput value={budget} onChange={setBudget} />
-        <DebtExtractor onAddDebt={addDebt} />
-        <DebtForm onAdd={addDebt} />
-        {debtsLoading ? (
-          <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-            Loading your debts...
-          </p>
+
+        {onStaffView ? (
+          <StaffDashboard />
         ) : (
-          <DebtList debts={debts} onDelete={deleteDebt} />
+          <>
+            {debtsError && (
+              <div
+                role="alert"
+                className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+              >
+                <span>{debtsError}</span>
+                <button
+                  type="button"
+                  onClick={() => setDebtsError(null)}
+                  className="text-xs font-semibold text-red-900 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+            <Summary debts={debts} />
+            <BudgetInput value={budget} onChange={setBudget} />
+            <DebtExtractor onAddDebt={addDebt} />
+            <DebtForm onAdd={addDebt} />
+            {debtsLoading ? (
+              <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
+                Loading your debts...
+              </p>
+            ) : (
+              <DebtList debts={debts} onDelete={deleteDebt} />
+            )}
+            <StrategyComparison debts={debts} budget={budget} />
+          </>
         )}
-        <StrategyComparison debts={debts} budget={budget} />
       </main>
     </div>
   );
