@@ -8,6 +8,10 @@ export type {
   LoginInput,
   RegisterInput,
 } from "../validators/auth.schema.js";
+export type {
+  ExtractedDebt,
+  ExtractionResult,
+} from "../validators/extraction.schema.js";
 
 // User-facing types backed by the Mongoose model rather than a Zod
 // schema (they describe persistence, not API input).

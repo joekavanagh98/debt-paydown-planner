@@ -30,6 +30,12 @@ const envSchema = z.object({
   // token is valid for too long.
   JWT_EXPIRES_IN: z.string().default("15m"),
 
+  // Required for v8 phase 3 (AI debt extraction). No default — the
+  // /debts/extract endpoint can't function without a key, and we'd
+  // rather fail at boot than 500 on every request later. Get one
+  // at https://console.anthropic.com.
+  ANTHROPIC_API_KEY: z.string().min(1),
+
   CORS_ORIGIN: z.string().min(1).default("http://localhost:5173"),
 
   LOG_LEVEL: z

@@ -43,3 +43,17 @@ export class ConflictError extends AppError {
     super(409, "already_exists", message);
   }
 }
+
+/**
+ * Used when the upstream LLM returns something we can't parse into
+ * the expected shape (no tool_use block, malformed input, Zod
+ * rejects). 502 because it's an upstream-service problem from the
+ * client's perspective, not their request being wrong.
+ */
+export class ExtractionError extends AppError {
+  constructor(
+    message: string = "Could not extract debts from the provided text.",
+  ) {
+    super(502, "extraction_failed", message);
+  }
+}

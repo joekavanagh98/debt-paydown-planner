@@ -17,6 +17,10 @@ export default defineConfig({
       // verify against this value.
       JWT_SECRET: "test-secret-test-secret-test-secret-test-secret",
       JWT_EXPIRES_IN: "15m",
+      // Test-only Anthropic key. Required for the env schema to
+      // validate; the SDK is mocked in tests so it never reaches
+      // the wire.
+      ANTHROPIC_API_KEY: "test-anthropic-key",
     },
   },
 });
