@@ -572,3 +572,146 @@ similar mappings; deferred until that's actually true.
   and roll back on failure, but the Render free tier's latency
   variance makes the optimistic version more confusing than
   reassuring.
+
+## v8 Phase 4: Staff dashboard (frontend)
+
+Phase 4 adds a staff-only view that fetches `/staff/summary` and
+renders the aggregate metrics as cards. The view is reachable via
+a Planner / Staff toggle in the header, only visible when the
+signed-in user has `role === "staff"`. Backend design notes for
+the same phase live in v5-backend/NOTES.md.
+
+### View switch instead of a router
+
+App-level navigation is one piece of state: `view: "main" |
+"staff"` on `SignedInApp`. No `react-router-dom`, no path
+matching, no route definitions.
+
+Why: v8 has two views and no deep-linkable URLs that any user
+would actually share. The Planner doesn't need a stable URL
+because there's nothing to share other than the app itself; the
+Staff dashboard isn't useful without an auth session and isn't
+meant to be linked from anywhere external. A router would add a
+dependency and a layer of indirection to solve a problem the app
+doesn't have.
+
+The trade-off: refresh-resets-the-view. If a staff user is on
+the dashboard and reloads, they land back on the planner. Minor
+friction, two clicks to recover. Adding a router (or persisting
+view to localStorage like budget) is a one-pass change if it ever
+matters.
+
+When a router earns its place: a third view, or a deep link the
+product genuinely wants (a per-user detail page, a sharable
+report, an OAuth callback URL). The comment in App.tsx flags this
+explicitly so future-self knows where the wiring goes.
+
+### Role-gated toggle, role-gated render
+
+Two layers of role-gating in the frontend:
+
+1. **The toggle button group only renders when `user.role ===
+   "staff"`.** A non-staff user sees no Staff button in the
+   header. Read off the user object in the auth context, which
+   is populated from the login response and refreshed on each
+   sign-in.
+2. **`StaffDashboard` itself doesn't check role.** The component
+   assumes the caller has already gated. If a non-staff user
+   somehow renders it, the backend's `requireStaff` returns 403
+   and the component shows the forbidden message.
+
+Frontend gating is UX (don't show what you can't do); backend
+gating is the actual security boundary. The component design
+keeps these layered correctly: the toggle is the convenience
+gate, requireStaff is the wall.
+
+A demoted staff user (role flipped to "user" in Mongo while a
+session is live) still sees the toggle until they re-login,
+because the cached user object hasn't refreshed. Clicking Staff
+fires the request, which 403s. The error mapping (below)
+surfaces "You no longer have staff access. Switch to the
+planner view." Acceptable transient state; full immediate
+revocation would need either a websocket or a polled `/auth/me`
+refresh, neither of which earned a place in v8.
+
+### Privacy banner is a soft check
+
+The "Aggregate data only" banner (full text in
+StaffDashboard.tsx) sits at the top of the Staff dashboard. It
+is non-collapsible and renders before the cards.
+
+The banner is informational, not a security control. If a
+backend bug accidentally surfaced individual data, the banner's
+claim would no longer match the page, but the banner itself
+would still render. It doesn't inspect the response. The
+load-bearing guarantee against leaks is the backend's leak
+canary test (`v5-backend/NOTES.md`, "Aggregate-only invariant").
+
+Why keep a banner that doesn't enforce anything: the staff user
+needs an explicit reminder that the page they're looking at
+should not contain individual customer data, so a future change
+that adds an individual-detail field stands out as out of
+character. It is a documented expectation, displayed.
+
+### Error mapping at the call site
+
+Three failure modes mapped to user-facing messages in
+`messageFor(err)`:
+
+- **403 (`forbidden`)**: "You no longer have staff access.
+  Switch to the planner view." Most likely cause: a staff user
+  was demoted while their session was live. The message names
+  the recovery (toggle back to Planner) explicitly, since the
+  user is on a page they can no longer reach.
+- **401 (`unauthorized`)**: "Your session expired." Mostly a
+  visual flash before the AuthProvider's global 401 handler
+  fires, clears the user, and routes to the auth screen. The
+  message is for the brief render window where the dashboard
+  has rendered but the auth state hasn't propagated yet.
+- **Anything else**: "Couldn't load the staff summary. Try
+  again." Network blip, model glitch, transient backend
+  failure, etc.
+
+The same `ApiRequestError` shape that backs the DebtExtractor's
+`messageFor` is what's used here, with different error codes
+mapped. Same pattern; per-screen mapping function. Extract
+into a shared lookup if a third screen grows the same need.
+
+### Distribution chart is hand-rolled, not Recharts
+
+The debt-count distribution renders as four horizontal bars,
+each a flexbox row with a label, a `<div>` with width set as a
+percentage of the largest bucket, and a count. No chart
+library.
+
+Why not Recharts (already in the bundle for the strategy
+comparison): the distribution is four numbers. A bar chart
+component pulls in axis machinery, tooltips, and animations
+designed for time-series data. Four `<li>` rows in 30 lines of
+JSX render faster, look right at the page's information density,
+and don't need any new dependencies.
+
+Recharts continues to be the right tool for the strategy
+comparison page's per-debt balance lines. Different data, same
+file.
+
+### What v8 Phase 4 frontend still does not do
+
+- **Persisted view across refresh**. Refreshing while on the
+  Staff dashboard kicks back to Planner. localStorage-backed
+  view state would fix this but adds the same per-user namespace
+  problem the budget already solves; deferred.
+- **Live update of role changes**. Demotion mid-session shows
+  the stale toggle until re-login. A `/auth/me` poll or a
+  re-fetch on visibility change would cover this; not built.
+- **Audit trail in the UI**. The dashboard shows what the data
+  is now, not when it was last fetched or by whom. A "last
+  refreshed" timestamp would help a staff user reading
+  near-realtime data; not built.
+- **Drill-down from buckets**. Clicking the "6+ debts" bar
+  doesn't show anything. The dashboard is aggregate-only by
+  design, but a future product surface might want a flow from
+  "users in the high-bucket" into a non-PII follow-up
+  (recommended budget guidance, say).
+- **Dark mode**. Same v4-tailwind-wide gap noted above; nothing
+  on the staff page uses `dark:` variants either.

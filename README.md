@@ -10,7 +10,9 @@ Built as a 14-day self-directed capstone to learn React, TypeScript,
 Node.js, Express, MongoDB, and Tailwind CSS — the stack used by the
 Online Lending team at Mariner Finance.
 
-**Live demo:** coming in v8.
+**Live demo:** [debt-paydown-planner.vercel.app](https://debt-paydown-planner.vercel.app/)
+(backend on Render free tier, so the first request after a 15-minute
+idle window takes 30-50 seconds to wake the container).
 
 ## Version progression
 
@@ -29,7 +31,7 @@ from the directory tree.
 | [v5](v5-backend/) | Express 5, TypeScript, Zod | Layered backend (routes/controllers/services), centralized error handling and JSON error envelope, Zod request validation, env config validated at boot, pino + morgan logging, CORS, supertest end-to-end tests | Complete |
 | [v6](v5-backend/) | MongoDB Atlas, Mongoose | Persistent storage in v5-backend (in-place modification), UUID `_id`, mongodb-memory-server for tests, graceful shutdown, schema/type consolidation via z.infer | Complete |
 | [v7](v5-backend/) | JWT, bcrypt, helmet, express-rate-limit | JWT auth in v5-backend (in-place modification), bcrypt hashing with constant-time-ish login defense, per-user scoped debts, helmet security headers, IP-based rate limiting on auth endpoints, CORS array form | Complete |
-| v8 | Deployed + Claude API | Production deployment, AI-assisted debt extraction from uploaded statements, staff dashboard | Planned |
+| [v8](v5-backend/) | Render + Vercel + Anthropic SDK | Render Blueprint backend deploy and Vercel frontend deploy, Claude-backed debt extraction from pasted statements via tool use, three-layer prompt-injection defense (delimiter wrap, prompt hardening, review-before-save), per-user rate limit, role-gated staff dashboard with aggregate-only metrics and a leak-canary test enforcing the privacy invariant | Complete |
 
 ## How to run
 
@@ -64,14 +66,24 @@ npm run dev
   `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes` all
   enabled before any code landed. Chose to opt in to the noisy flags
   up front rather than retrofit later.
-- **Layered architecture (v5+, planned).** Routes delegate to
-  controllers, controllers to services, services to models. Business
-  logic lives in services so it's testable without HTTP plumbing. Zod
-  validation runs as its own layer before business logic ever sees
-  the request.
-- **Configuration via environment (v5+, planned).** No hardcoded
-  secrets, URLs, or tuning knobs. `.env.example` checked in;
-  production `.env` never is.
+- **Layered architecture (v5+).** Routes delegate to controllers,
+  controllers to services, services to models. Business logic lives
+  in services so it's testable without HTTP plumbing. Zod validation
+  runs as its own layer before business logic ever sees the request.
+- **Configuration via environment (v5+).** No hardcoded secrets,
+  URLs, or tuning knobs. `.env.example` checked in; production
+  `.env` never is.
+- **Auth as middleware, not as a service-level concern (v7+).**
+  `requireAuth` and `requireStaff` are Express middleware that gate
+  entire routers. The controllers don't know auth exists; they just
+  read `req.userId`. Same pattern keeps the staff dashboard's RBAC
+  isolated from the aggregation logic it protects.
+- **Aggregate-only invariant for staff data (v8).** The
+  `/staff/summary` endpoint is enforced aggregate-only by a
+  leak-canary test: a unique-token-seeded user is created, the
+  endpoint is hit as a staff caller, and the entire response body is
+  string-searched for the canary tokens. Any field that accidentally
+  surfaces individual data fails the test before merge.
 
 ## Project documents
 

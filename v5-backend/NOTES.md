@@ -808,6 +808,66 @@ totals, average APR, and a debt-count distribution. Nothing in the
 response identifies an individual user. Promotion to staff is a
 manual database operation, not a self-service flow.
 
+### Role lives on the User schema, not a separate roles table
+
+A second collection (`roles`, joined by user id) was rejected. v8
+has two roles (`user`, `staff`), no plans for a multi-role
+hierarchy, and no use case for a user holding multiple roles at
+once. A separate collection would carry a join cost on every
+auth-gated request to satisfy a flat enum.
+
+The schema field:
+
+```ts
+role: {
+  type: String,
+  enum: ["user", "staff"],
+  default: "user",
+  required: true,
+}
+```
+
+`enum` is the contract; Mongoose rejects writes that don't match.
+`default: "user"` covers two cases: a fresh registration via
+`/auth/register` (which doesn't set role explicitly), and any pre-
+Phase-4 user document that exists in Mongo without a role field
+at all. `toUserPublic` mirrors the safety net at the read side
+with `role: doc.role ?? "user"` so a legacy document loads
+without crashing the controller.
+
+Promotion is `db.users.updateOne({ email }, { $set: { role:
+"staff" } })`. No demotion route. To demote a staff user, set
+role back to `"user"` the same way.
+
+### Aggregate service, not raw queries in the controller
+
+`/staff/summary`'s controller is one line: call
+`getStaffSummary()` from the aggregate service, return its
+result. All the Mongoose aggregation pipelines live in
+`src/services/aggregate.service.ts`.
+
+The service runs three pipelines in parallel via `Promise.all`:
+
+- **Users**: `$group` on a constant key with `$min` and `$max`
+  on `createdAt`, plus `$sum: 1` for total. One round-trip to
+  the users collection.
+- **Debts**: `$group` on a constant key with `$sum: "$balance"`,
+  `$avg: "$rate"`, and `$sum: 1` for total count. One round-
+  trip to the debts collection.
+- **Distribution**: a two-stage pipeline. First `$group` on
+  `userId` to get `{ _id: userId, count: <debtCount> }`; then
+  in JS, bucket those counts into 1-2 / 3-5 / 6+. The "0 debts"
+  bucket is computed in JS as `userCount -
+  userDebtCounts.length`, since users with zero debts don't show
+  up in the `$group` output at all.
+
+Why a service rather than letting the controller call Mongoose
+directly: the aggregation logic is the part that needs unit
+coverage (the leak canary plus the bucket-math), and a service
+function is straightforward to call from a test without spinning
+up Express. Same shape as `paydown.service` and
+`extraction.service`.
+
 ### Promotion is manual on purpose
 
 There is no `/auth/promote` route. Granting staff is a privileged
@@ -855,6 +915,12 @@ backend reads the role fresh from Mongo on every request, so a
 restart isn't required, but the frontend caches the user object
 returned at login. Re-login refreshes the cached role and the
 Planner/Staff toggle appears.
+
+For the deploy-time variant of this (promoting the first staff
+user against the production cluster, including the database-name
+gotcha), see `docs/DEPLOY.md` § "Promote the first staff user"
+and the matching troubleshooting entry "Staff toggle doesn't
+show after promoting a user."
 
 ### Why fresh DB lookup in requireStaff
 

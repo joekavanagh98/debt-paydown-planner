@@ -4,7 +4,9 @@ Backend on Render. Frontend on Vercel. Database on MongoDB Atlas.
 
 The order is backend first (so the Render URL is known for the
 frontend's VITE_API_URL), frontend second, then CORS_ORIGIN gets
-updated on the backend with the Vercel URL.
+updated on the backend with the Vercel URL. Step 5 (promote the
+first staff user) is post-deploy and only needed if you want
+access to the staff dashboard.
 
 ## Prerequisites
 
@@ -102,6 +104,66 @@ In an incognito browser window (so no stale cookies / state):
 6. Delete the debt → disappears
 
 If all six steps work, the deploy is good.
+
+## 5. Promote the first staff user
+
+The Staff dashboard is gated by `role: "staff"` on the User
+document. Registration creates users with `role: "user"` by
+design (no self-service promotion). For the first staff user
+after a fresh deploy, flip the role manually in Atlas.
+
+The promotion target is whichever account you want to be able
+to view aggregate metrics. Typically that is your own account
+(register through the live frontend first, then promote that
+email).
+
+Two paths:
+
+**mongosh against the production cluster:**
+
+```sh
+mongosh "$MONGODB_URI"
+```
+
+In the shell:
+
+```js
+use test
+db.users.updateOne(
+  { email: "you@example.com" },
+  { $set: { role: "staff" } }
+)
+```
+
+The `use test` line matters. The current production `MONGODB_URI`
+in Render does not specify a database name, so Mongoose connects
+to the `test` database by default and existing production users
+live there. (See v5-backend/NOTES.md § "Database name mismatch"
+for the v9 carry-forward to unify dev and prod databases.)
+
+A `modifiedCount: 1` response means the role flipped. `0` means
+the email didn't match: typo, wrong cluster, or the user hasn't
+registered yet via the frontend.
+
+**Atlas Data Explorer (UI):**
+
+1. Atlas dashboard → Browse Collections on the production cluster
+2. Pick the `test` database, then `users`
+3. Filter: `{ email: "you@example.com" }`
+4. Edit the matched document, change `role` from `"user"` to
+   `"staff"`, save
+5. If the document has no `role` field at all (a pre-Phase-4
+   account), add the key manually before saving
+
+After promotion, sign out and sign back in on the live frontend.
+The Planner / Staff toggle appears in the header; clicking Staff
+loads the dashboard.
+
+The backend reads role fresh from Mongo on every request (see
+v5-backend/NOTES.md § "Why fresh DB lookup in requireStaff"),
+so a service restart isn't required. The frontend caches the
+user object returned at login, which is why re-login is needed
+to surface the toggle.
 
 ## Gotchas
 
@@ -290,6 +352,30 @@ hit a runtime SDK error instead.
 Check Render logs for an Anthropic SDK auth error. Re-paste the
 key from https://console.anthropic.com → API Keys, save, let
 Render redeploy.
+
+### Staff toggle doesn't show after promoting a user
+
+Two common causes after running step 5:
+
+- **The user didn't sign out and back in.** The Planner / Staff
+  toggle reads `user.role` off the cached user object the
+  frontend got back at login. Promotion in Mongo flips the
+  database value but the cached object on the client is stale
+  until the next sign-in. Sign out, sign back in, the toggle
+  appears.
+- **The promotion ran against the wrong database.** Production
+  users live in the `test` database (the URI's missing path
+  segment defaults to `test`). If you ran `use
+  debt-paydown-planner` first and updated there, you flipped a
+  document that doesn't exist in production. `modifiedCount: 0`
+  in the mongosh output is the symptom. Re-run with `use test`.
+
+If both check out and the toggle still doesn't show, log the
+user object from the auth context (browser console) and confirm
+the `role` field on the user is `"staff"`. If it's missing or
+still `"user"`, the login response didn't pick up the new role,
+which means the promotion either didn't persist or hit a
+different cluster than the one Render points at.
 
 ### /debts/extract returns 502 extraction_failed
 
