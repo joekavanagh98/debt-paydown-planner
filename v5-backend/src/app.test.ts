@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
+import express from "express";
 import jwt from "jsonwebtoken";
 import { buildApp } from "./app.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+import { requireAuth } from "./middleware/requireAuth.js";
+import { requireStaff } from "./middleware/requireStaff.js";
+import { UserModel } from "./models/user.model.js";
 
 const app = buildApp();
 
@@ -280,6 +285,50 @@ describe("/debts/extract", () => {
       .send({ text: "a".repeat(5001) });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("validation_error");
+  });
+});
+
+// ---- requireStaff middleware ----
+//
+// The real /staff/* routes land in commit c2 of v8 phase 4. To keep
+// c1 self-contained we mount the middleware against a tiny in-test
+// Express app with one route, sized to exercise the three branches
+// (no token, user role, staff role).
+
+function buildStaffTestApp(): express.Express {
+  const a = express();
+  a.use(express.json());
+  a.get("/test", requireAuth, requireStaff, (_req, res) => {
+    res.json({ ok: true });
+  });
+  a.use(errorHandler);
+  return a;
+}
+
+describe("requireStaff middleware", () => {
+  const staffApp = buildStaffTestApp();
+
+  it("rejects requests without a token (401)", async () => {
+    const res = await request(staffApp).get("/test");
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe("unauthorized");
+  });
+
+  it("rejects requests from regular users (403)", async () => {
+    const { token } = await registerAndLogin("regular@test.com");
+    const res = await request(staffApp).get("/test").set(auth(token));
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("forbidden");
+  });
+
+  it("allows requests from staff users (200)", async () => {
+    const { token, user } = await registerAndLogin("staff@test.com");
+    // Promotion is manual in v8 phase 4 (no self-service or invite
+    // flow) — for the test, write the role straight to Mongo.
+    await UserModel.updateOne({ _id: user.id }, { $set: { role: "staff" } });
+    const res = await request(staffApp).get("/test").set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
   });
 });
 

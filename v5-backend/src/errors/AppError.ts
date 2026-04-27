@@ -45,12 +45,24 @@ export class ConflictError extends AppError {
 }
 
 /**
- * Used when the upstream LLM returns something we can't parse into
- * the expected shape (no tool_use block, malformed input, Zod
- * rejects). 502 because it's an upstream-service problem from the
- * client's perspective, not their request being wrong.
+ * 403, distinct from 401. Used when the request is authenticated
+ * but the authenticated principal lacks the role needed for the
+ * route (v8 phase 4: requireStaff). 401 says "log in"; 403 says
+ * "you can log in all you want, you still can't have this."
  */
+export class ForbiddenError extends AppError {
+  constructor(message: string = "Forbidden") {
+    super(403, "forbidden", message);
+  }
+}
+
 export class ExtractionError extends AppError {
+  /**
+   * Used when the upstream LLM returns something we can't parse into
+   * the expected shape (no tool_use block, malformed input, Zod
+   * rejects). 502 because it's an upstream-service problem from the
+   * client's perspective, not their request being wrong.
+   */
   constructor(
     message: string = "Could not extract debts from the provided text.",
   ) {
