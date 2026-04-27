@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import express from "express";
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { buildApp } from "./app.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -329,6 +330,114 @@ describe("requireStaff middleware", () => {
     const res = await request(staffApp).get("/test").set(auth(token));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
+  });
+});
+
+// ---- /staff/summary ----
+
+describe("/staff/summary", () => {
+  it("rejects requests without a token", async () => {
+    const res = await request(app).get("/staff/summary");
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe("unauthorized");
+  });
+
+  it("rejects requests from regular users (403)", async () => {
+    const { token } = await registerAndLogin("regular-summary@test.com");
+    const res = await request(app).get("/staff/summary").set(auth(token));
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("forbidden");
+  });
+
+  it("returns the aggregate shape for a staff user", async () => {
+    // Build a known dataset: 3 users, of which 2 have debts.
+    const a = await registerAndLogin("user-a-summary@test.com");
+    const b = await registerAndLogin("user-b-summary@test.com");
+    await registerAndLogin("user-c-summary@test.com"); // no debts
+    await request(app)
+      .post("/debts")
+      .set(auth(a.token))
+      .send({ name: "A1", balance: 1000, rate: 10, minPayment: 25 });
+    await request(app)
+      .post("/debts")
+      .set(auth(a.token))
+      .send({ name: "A2", balance: 2000, rate: 20, minPayment: 50 });
+    await request(app)
+      .post("/debts")
+      .set(auth(b.token))
+      .send({ name: "B1", balance: 500, rate: 15, minPayment: 25 });
+
+    // Promote a fourth account to staff so the staff caller is
+    // separate from the data we created above.
+    const staff = await registerAndLogin("staff-summary@test.com");
+    await UserModel.updateOne(
+      { _id: staff.user.id },
+      { $set: { role: "staff" } },
+    );
+
+    const res = await request(app)
+      .get("/staff/summary")
+      .set(auth(staff.token));
+    expect(res.status).toBe(200);
+
+    expect(res.body.users.total).toBe(4);
+    expect(res.body.users.earliestSignup).toEqual(expect.any(String));
+    expect(res.body.users.latestSignup).toEqual(expect.any(String));
+
+    expect(res.body.debts.totalCount).toBe(3);
+    expect(res.body.debts.totalBalance).toBe(3500);
+    // (10 + 20 + 15) / 3 = 15
+    expect(res.body.debts.averageRate).toBeCloseTo(15, 5);
+
+    // a has 2 debts, b has 1, c and staff have 0.
+    expect(res.body.debtCountDistribution).toEqual({
+      zero: 2,
+      oneToTwo: 2,
+      threeToFive: 0,
+      sixPlus: 0,
+    });
+  });
+
+  it("aggregate response leaks no individual user data (canary check)", async () => {
+    // Build users + debts whose names contain unique tokens. After
+    // calling /staff/summary, JSON.stringify the body and assert
+    // none of those tokens appear. This is the load-bearing check
+    // on the aggregate-only design — if any token leaks, an
+    // aggregation pipeline somewhere is returning identifying data.
+    //
+    // randomUUID() generates the tokens per run so collisions
+    // against any real value are statistically impossible, not just
+    // "unlikely with this hand-picked hex string."
+    const EMAIL_CANARY = `leak-${randomUUID()}`;
+    const NAME_CANARY = `debt-${randomUUID()}`;
+
+    const u = await registerAndLogin(`${EMAIL_CANARY}@test.com`);
+    await request(app)
+      .post("/debts")
+      .set(auth(u.token))
+      .send({
+        name: NAME_CANARY,
+        balance: 1234.56,
+        rate: 17.89,
+        minPayment: 42,
+      });
+
+    const staff = await registerAndLogin("staff-canary@test.com");
+    await UserModel.updateOne(
+      { _id: staff.user.id },
+      { $set: { role: "staff" } },
+    );
+
+    const res = await request(app)
+      .get("/staff/summary")
+      .set(auth(staff.token));
+    expect(res.status).toBe(200);
+
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain(EMAIL_CANARY);
+    expect(body).not.toContain(NAME_CANARY);
+    expect(body).not.toContain(u.user.id);
+    expect(body).not.toContain(staff.user.id);
   });
 });
 
