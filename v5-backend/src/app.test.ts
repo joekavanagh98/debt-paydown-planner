@@ -247,6 +247,42 @@ describe("/debts CRUD with auth", () => {
   });
 });
 
+// ---- /debts/extract with auth + validation ----
+//
+// Success-case extraction (Anthropic SDK call) is covered by
+// extraction.service.test.ts where the SDK is mocked. These tests
+// only exercise the route's auth and validation layers, which fail
+// before the controller runs and so never reach the SDK.
+
+describe("/debts/extract", () => {
+  it("rejects requests without a token", async () => {
+    const res = await request(app)
+      .post("/debts/extract")
+      .send({ text: "Visa $5000 at 24% APR" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects empty text with 400 validation_error", async () => {
+    const { token } = await registerAndLogin("extract-empty@test.com");
+    const res = await request(app)
+      .post("/debts/extract")
+      .set(auth(token))
+      .send({ text: "" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("validation_error");
+  });
+
+  it("rejects text over 5000 chars with 400 validation_error", async () => {
+    const { token } = await registerAndLogin("extract-toolong@test.com");
+    const res = await request(app)
+      .post("/debts/extract")
+      .set(auth(token))
+      .send({ text: "a".repeat(5001) });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("validation_error");
+  });
+});
+
 // ---- /paydown with auth ----
 
 describe("/paydown with auth", () => {

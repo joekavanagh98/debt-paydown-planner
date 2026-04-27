@@ -1,5 +1,5 @@
 import rateLimit from "express-rate-limit";
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import { env } from "../config/env.js";
 
 const isTest = env.NODE_ENV === "test";
@@ -34,6 +34,38 @@ export const authRateLimit: RequestHandler = rateLimit({
     error: {
       code: "rate_limited",
       message: "Too many attempts. Try again in a few minutes.",
+    },
+  },
+});
+
+/**
+ * Rate limiter for the AI debt-extraction endpoint. 10 requests per
+ * user per hour, keyed by userId rather than IP.
+ *
+ * Why userId, not IP: the endpoint is behind requireAuth, so
+ * req.userId is always set by the time this runs. IP-keying would
+ * let one user share quota across coworkers (false friction) and
+ * let one user bypass quota by switching networks (false ceiling).
+ * userId is the unit of cost, so it's the unit of quota.
+ *
+ * The fallback to IP only fires if the route is wired without
+ * requireAuth in front — defensive, should never happen in
+ * practice. Returning empty string would defeat the limiter.
+ *
+ * Skipped in test mode for the same reason authRateLimit is.
+ */
+export const extractionRateLimit: RequestHandler = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isTest,
+  keyGenerator: (req: Request): string =>
+    req.userId ?? `ip:${req.ip ?? "unknown"}`,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Extraction limit reached. Try again in an hour.",
     },
   },
 });
