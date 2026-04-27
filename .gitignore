@@ -143,3 +143,6 @@ vite.config.ts.timestamp-*
 
 # Build outputs (generic, covers CRA-style builds)
 build/
+
+# Claude Code local state (settings, worktrees, etc)
+.claude/
