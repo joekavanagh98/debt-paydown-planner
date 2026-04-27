@@ -230,3 +230,214 @@ directory between commands. Each time a stray `package.json`,
 Each was cleaned up before committing. A root-level `package.json`
 with an install script that blocks installs would catch it. Not
 urgent.
+
+## v8 Phase 1: Frontend ↔ Backend integration
+
+v8 wires the v4 frontend up to the v5/v6/v7 backend. Phase 1 lands
+the local end-to-end flow: auth, then debts CRUD against
+MongoDB-via-Atlas. Deploy, AI extraction, and the staff view are
+later phases.
+
+### What changed
+
+- Auth (login + register + logout) on top of the existing app
+- Debts persistence moved off localStorage and onto the backend's
+  `/debts` endpoints
+- Budget stays in localStorage but namespaced by user id
+- 401 from any debts call triggers an automatic sign-out with a
+  "session expired" message
+
+### Token storage: in-memory only
+
+The token returned from `/auth/login` lives in a module-scope
+variable in `src/lib/api.ts`. No localStorage. No sessionStorage.
+
+Both alternatives were considered and rejected:
+
+- **localStorage** survives across refreshes and tabs, but a script
+  that gets injected into the page (XSS) can read it. For a demo
+  with public-facing auth that's the wrong tradeoff.
+- **sessionStorage** is per-tab and slightly better, but still
+  JS-readable. The XSS posture is the same; the only win over
+  localStorage is tab isolation. Not worth the marginal benefit.
+
+In-memory means a page refresh logs the user out. With v7's 15-min
+token expiration that's not a huge regression, but it is friction.
+
+The proper fix is a refresh-token flow: a long-lived
+HttpOnly-cookie refresh token that the client can't read but that
+the server uses to issue fresh access tokens. v7 deliberately
+deferred refresh tokens to v9+ because the design surface (token
+revocation, rotation, per-device session list, secure storage)
+goes well beyond what v7 was scoped to do. The in-memory tradeoff
+is the cost of that deferral.
+
+### Type duplication between frontend and backend
+
+`src/types/index.ts` declares `User`, `LoginResponse`, `Debt`,
+`NewDebt`, etc. that mirror v5-backend's contracts. They're written
+by hand in two places.
+
+Three proper solutions, each with their own cost:
+
+1. **Monorepo workspaces**, with a shared `@dpp/types` package.
+   Lowest tool overhead but biggest restructure: `package.json`
+   per workspace, root `package.json` with `workspaces`, build-
+   order coordination. Doesn't earn its place for two consumers
+   (frontend + backend) sharing a few types.
+2. **OpenAPI codegen**: backend exposes an OpenAPI/Swagger spec,
+   frontend's types are generated from it during build. Single
+   source of truth, fully typed, but requires standing up the
+   spec-emit pipeline on the backend (zod-to-openapi or similar)
+   and wiring a codegen step into the frontend build.
+3. **tRPC**: turn the API into typed procedure calls; frontend
+   imports the backend's types directly. Best DX in this list,
+   but ties the architecture to tRPC across the stack and rules
+   out a public REST API for v9+.
+
+Phase 1 stays with the duplication. None of the three options is
+cheap enough to justify pulling the work into v8's window. Listing
+them here because picking one when the project graduates beyond
+the capstone is the next move.
+
+### Auth state lives in context, error/loading state in the form
+
+The AuthProvider exposes `user`, `sessionExpired`, and the three
+action functions (login, register, logout). It does **not** track
+"is the form submitting?" or "what was the last error?". Those
+belong to the consumer that's actually rendering the form.
+
+Why: a logout button in the header should not get its UI affected
+by the login form's submitting state. The auth provider is the
+data store. UI state lives next to the UI.
+
+### File split for HMR
+
+The auth Context, the `useAuth` hook, and the `AuthProvider`
+component originally lived in one file (`AuthContext.tsx`). Vite's
+React Fast Refresh ESLint rule (`react-refresh/only-export-components`)
+flagged it: a file should export only components or only
+non-components, not both. Mixing breaks HMR's ability to preserve
+component state through hot reloads.
+
+Split into two files:
+
+- `authContext.ts`: the Context object and the `useAuth` hook (no
+  components, no JSX, no rule violation)
+- `AuthProvider.tsx`: just the AuthProvider component
+
+The Context is exported from `authContext.ts` and imported by both
+AuthProvider and useAuth. HMR works cleanly.
+
+### Remount-by-key for cross-user state reset
+
+The original App.tsx tried to reset state when the user changed by
+checking `if (user === null)` inside a useEffect. ESLint's
+`react-hooks/set-state-in-effect` rule flagged the synchronous
+setState calls. Setting state synchronously inside an effect causes
+an extra render and the rule asks you to derive state from props
+or remount instead.
+
+Remount is the right answer here. App now splits:
+
+```
+App        — gates: returns AuthGate when user === null
+SignedInApp — receives user as a prop, key={user.id}
+```
+
+When the user changes (sign-out + sign-in as someone else),
+`key={user.id}` changes, React unmounts SignedInApp and mounts a
+fresh instance. All per-user state resets without manual cleanup.
+SignedInApp's mount effect fetches that user's debts; previous
+debts/budget/loading are simply gone with the previous instance.
+
+### Budget in localStorage, namespaced by user id
+
+`dpp.budget.${userId}` rather than `dpp.budget`. Two users on the
+same browser don't see each other's budget value.
+
+Server-side preferences would be the proper fix: a `/users/me/preferences`
+endpoint backed by Mongo, the budget field stored alongside other
+UI prefs. Out of scope for v8 phase 1, which is "wire the frontend
+to the existing backend, don't grow the API surface." Worth
+revisiting when staff dashboard or AI extraction lands and there's
+already movement on `/users/me/*`.
+
+### 401 mid-session: global handler in api.ts
+
+When any debts call comes back 401 (typically because the JWT
+expired idle), the user shouldn't see "Couldn't load your debts"
+and have to puzzle out that they need to log in again. v8 adds a
+global 401 handler:
+
+`api.ts` exposes `setOnAuthError(callback)`. The AuthProvider
+registers a callback once on mount that clears the in-memory
+token, clears the user, and flips a `sessionExpired` flag in the
+context. AuthGate reads `sessionExpired` and surfaces the message
+"Your session expired. Please sign in again." above the form.
+
+The alternative was wrapping every authed endpoint individually
+in catch-401-call-logout. Rejected: a future authed endpoint would
+have to remember to wrap, and the duplication would drift. The
+api.ts boundary is the right home — it already owns the token
+header on the request side, so it owns the 401 response on the
+other side.
+
+The `ApiRequestError` still throws after the handler fires, so the
+per-call `.catch()` can pick a message. For 401 specifically the
+page is about to unmount the call site (auth state cleared →
+AuthGate renders), so the per-call message races a render that's
+about to discard it. That's fine. The session-expired message wins.
+
+### AuthForm accessibility posture
+
+What's covered:
+
+- Every input has a matching `<label htmlFor>` so screen readers
+  announce the field name.
+- `type="email"` and `type="password"` give browsers and password
+  managers the right hints.
+- `autoComplete` is set per field (`email`, `current-password`,
+  `new-password`) so password managers know what to fill or save.
+- The error panel uses `role="alert"` so AT users get notified
+  when an error appears.
+- Submit button text changes during submitting (just `...` for now)
+  so the state change is visible.
+- Inputs and the submit button go to the disabled style during
+  submitting; visually clear that the form is in flight.
+
+What's not covered:
+
+- No `aria-describedby` linking the error panel to the email/password
+  inputs. Screen readers announce the alert when it appears but
+  don't tie it to a specific field.
+- No focus management. After a submit fails, focus stays on the
+  submit button rather than returning to the first invalid field.
+- No `aria-invalid` on inputs after a failed submit. The error is
+  generic ("incorrect", "already exists", etc.) so AT can't tell
+  which field is at fault.
+- Password minimum length (8) is enforced via `minLength` on the
+  input, but the constraint message comes from the browser's
+  native popover rather than an inline announcement.
+
+These are real gaps for a production product. Calling them out
+explicitly so they're visible rather than hidden in a TODO; phase
+1's scope was end-to-end-flow, not full WCAG. Future commit could
+add the four fixes above in one pass.
+
+### Surprises during integration (not all listed above)
+
+- **`RequestInit['body']` is `BodyInit | null`** under
+  exactOptionalPropertyTypes. Spreading `body: undefined` into a
+  fetch options object fails type-check. Workaround: build the
+  init incrementally so the `body` key is absent rather than set
+  to undefined.
+- **Single typed `apiRequest<T>` doesn't fit a 204-returning
+  endpoint cleanly.** `return undefined as T` is a typed lie when
+  T isn't void. Phase 1 split the transport into `apiRequest<T>`
+  (throws on 204, expects a body) and `apiRequestVoid()` (DELETE,
+  expects no body). Honest types at every call site.
+- **`react-refresh/only-export-components` ESLint rule** drove the
+  AuthContext file split (above).
+- **`react-hooks/set-state-in-effect` ESLint rule** drove the App
+  / SignedInApp + key remount split (above).

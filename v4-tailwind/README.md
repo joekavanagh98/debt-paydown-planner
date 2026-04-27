@@ -1,13 +1,18 @@
-# v4 - Tailwind CSS
+# v4 / v8 - Tailwind CSS Frontend
+
+v4 stood up the Tailwind UI, charts, and the avalanche/snowball
+comparison. v8 phase 1 wired this frontend up to the v5/v6/v7
+backend (auth, per-user debts, MongoDB persistence). Subsequent v8
+phases add deploy, AI debt extraction, and the staff view.
 
 ## What this is
 
 The v3 TypeScript app with real visual design, a second paydown
-strategy, charts, and a Vercel deploy config. Same typed core, same
-component structure, same calculator math. The difference is that
-v4 looks like a product a person would use.
+strategy, charts, and a Vercel deploy config. As of v8 phase 1
+debts persist to the v5-backend instead of localStorage, and the
+app gates behind login.
 
-v4 is where the app goes from "logic works" to "ready to ship":
+v4 is where the app went from "logic works" to "ready to ship":
 Tailwind for styling, responsive breakpoints for mobile, Recharts
 for the charts, Vercel for the URL.
 
@@ -33,25 +38,49 @@ Plus the features that define v4:
   debt, so the shape of the payoff is visible at a glance
 - **Vercel deploy config** (`vercel.json` with SPA rewrites)
 
-## What v4 does NOT include
+Plus what v8 phase 1 adds:
 
-These features still belong to later versions:
+- **Sign in / register** screen as a gate above the app
+- **In-memory token storage** (no localStorage / sessionStorage for the
+  JWT, by design — XSS posture)
+- **Backend-backed debts**: GET/POST/DELETE `/debts` against
+  v5-backend, scoped per user via the JWT
+- **Session-expired handling**: a 401 from any debts call clears
+  auth state and shows a "Your session expired" message on the
+  login screen
+- **Sign-out button** in the header
 
-- Backend or database storage - v5
-- Runtime validation of persisted data (Zod) - v6
-- User accounts or login - v7
-- AI-assisted debt extraction from statements - v8
-- Staff dashboard - v8
+## What does NOT yet ship
+
+These features still belong to later v8 phases:
+
+- Production deployment of frontend + backend (v8 phase 2)
+- AI-assisted debt extraction from PDF statements (v8 phase 3)
+- Staff dashboard (v8 phase 4)
+- Refresh-token flow (deferred to v9+; the in-memory token strategy
+  trades refresh-survival for XSS safety, see NOTES.md)
+- Server-side user preferences (budget currently uses localStorage
+  per-user-id as a stopgap)
 
 ## How to run
 
+You need the v5-backend running on `http://localhost:3001`. See
+`v5-backend/README.md` for the setup (Atlas connection string,
+JWT secret, etc.).
+
 ```
 cd v4-tailwind
+cp .env.example .env.local   # VITE_API_URL=http://localhost:3001
 npm install
 npm run dev
 ```
 
 Then open the URL Vite prints (usually http://localhost:5173).
+The first screen is sign-in. Click Register to create an account.
+
+Override the backend URL via the `VITE_API_URL` env var in
+`.env.local`. Vite only exposes env vars prefixed with `VITE_` to
+client code.
 
 ## How to test
 
@@ -86,17 +115,27 @@ v4-tailwind/
   tsconfig.app.json            - strict compiler options for src/
   eslint.config.js             - typescript-eslint rules
   vercel.json                  - SPA rewrites for deploy
+  .env.example                 - VITE_API_URL (v8)
   src/
-    main.tsx                   - React root render, imports index.css
+    main.tsx                   - root render, wraps App in AuthProvider (v8)
     index.css                  - one-liner: @import "tailwindcss"
-    App.tsx                    - top-level state, handlers, layout
+    App.tsx                    - gate + SignedInApp (key={user.id}) (v8)
     types/
-      index.ts                 - Debt, NewDebt, ScheduleEntry,
-                                 PaydownResult, Strategy
+      index.ts                 - Debt, NewDebt, Strategy, PaydownResult,
+                                 plus User and LoginResponse (v8)
+    lib/
+      api.ts                   - fetch wrapper, in-memory token,
+                                 401 handler hook (v8)
+      debtsApi.ts              - typed wrappers for /debts (v8)
     features/
+      auth/                    - (v8)
+        AuthForm.tsx           - login/register UI, mode-aware
+        AuthGate.tsx           - signed-out screen, error mapping
+        AuthProvider.tsx       - state + actions, 401 wiring
+        authContext.ts         - Context + useAuth hook (split for HMR)
       debts/
         BudgetInput.tsx        - monthly budget control
-        DebtForm.tsx           - add-a-debt form (2-col grid on sm+)
+        DebtForm.tsx           - add-a-debt form, async submit (v8)
         DebtList.tsx           - list of debts
         DebtRow.tsx            - one row, with delete button
         Summary.tsx            - totals cards
@@ -106,5 +145,5 @@ v4-tailwind/
       paydownCalculator.ts     - runPaydown helper + avalanche/snowball
       paydownCalculator.test.ts
       formatMoney.ts           - currency formatting
-      storage.ts               - generic localStorage wrapper
+      storage.ts               - generic localStorage wrapper (budget only after v8)
 ```
