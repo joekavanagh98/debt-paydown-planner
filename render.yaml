@@ -26,7 +26,13 @@ services:
     # confirm in the dashboard before relying on this value.
     region: virginia
     plan: free
-    buildCommand: npm ci && npm run build
+    # --include=dev forces devDependencies to install even though
+    # NODE_ENV=production. The build step needs typescript and the
+    # @types/* packages (which live in devDependencies); without
+    # the override, npm ci silently skips them and tsc fails.
+    # Runtime is unaffected: NODE_ENV=production still drives
+    # pino JSON output, helmet HSTS, and the morgan combined format.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
