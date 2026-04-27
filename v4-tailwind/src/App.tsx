@@ -3,6 +3,7 @@ import type { Debt, NewDebt, User } from "./types";
 import AuthGate from "./features/auth/AuthGate";
 import { useAuth } from "./features/auth/authContext";
 import BudgetInput from "./features/debts/BudgetInput";
+import DebtExtractor from "./features/debts/DebtExtractor";
 import DebtForm from "./features/debts/DebtForm";
 import DebtList from "./features/debts/DebtList";
 import StrategyComparison from "./features/debts/StrategyComparison";
@@ -142,6 +143,7 @@ function SignedInApp({ user }: SignedInAppProps) {
         )}
         <Summary debts={debts} />
         <BudgetInput value={budget} onChange={setBudget} />
+        <DebtExtractor onAddDebt={addDebt} />
         <DebtForm onAdd={addDebt} />
         {debtsLoading ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
