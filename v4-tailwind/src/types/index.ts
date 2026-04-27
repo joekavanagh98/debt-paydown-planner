@@ -52,3 +52,22 @@ export interface LoginResponse {
   user: User;
   token: string;
 }
+
+// ---- v8 phase 3: AI extraction types ----
+//
+// Mirror of v5-backend's extracted shape. Same duplication caveat as
+// the auth types above; the proper solutions are listed in NOTES.
+
+export interface ExtractedDebt {
+  name: string;
+  balance: number;
+  rate: number;
+  // The server omits this field when the source statement didn't
+  // state a minimum payment. The user fills it in (or accepts 0,
+  // which the calculator's fallback rule handles) before saving.
+  minPayment?: number;
+}
+
+export interface ExtractionResult {
+  debts: ExtractedDebt[];
+}
