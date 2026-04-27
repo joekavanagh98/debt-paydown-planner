@@ -104,6 +104,14 @@ Rate limiting is skipped when `NODE_ENV=test` so the supertest suite
 can register and log in many users without tripping the per-IP
 budget. See NOTES for the rationale.
 
+## How to deploy
+
+Render reads `render.yaml` at the repo root and provisions the
+backend service. See [docs/DEPLOY.md](../docs/DEPLOY.md) for the
+full guide (prerequisites, dashboard steps, the
+`npm ci --include=dev` build-command requirement, the cold-start
+behavior, and the troubleshooting list).
+
 ## Endpoints
 
 ### `GET /health`

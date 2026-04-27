@@ -1,0 +1,259 @@
+# Deploying debt-paydown-planner
+
+Backend on Render. Frontend on Vercel. Database on MongoDB Atlas.
+
+The order is backend first (so the Render URL is known for the
+frontend's VITE_API_URL), frontend second, then CORS_ORIGIN gets
+updated on the backend with the Vercel URL.
+
+## Prerequisites
+
+- GitHub repo with code pushed
+- MongoDB Atlas account with an M0 free-tier cluster
+  (see Atlas docs for cluster creation; not covered here)
+- Render account
+- Vercel account
+- Atlas Network Access set to `0.0.0.0/0`
+
+The Atlas allowlist is `0.0.0.0/0` because Render's free-tier egress
+IPs aren't fixed and Vercel's aren't either. This is a known v8
+deploy gap. Tightening it requires a paid Render tier with static
+egress, or a Mongo Atlas dedicated cluster with a peering connection.
+Documented; deferred.
+
+## 1. Backend (Render)
+
+Use **Render → New → Blueprint** (not "New Web Service"). Blueprint
+reads `render.yaml` from the repo root and provisions the service
+the way the file describes. New Web Service ignores `render.yaml`
+and forces manual config — picking it by mistake is the fastest way
+to spend a half-hour clicking through fields the yaml already covers.
+
+Steps:
+
+1. Render → New → Blueprint
+2. Connect GitHub, select the repo
+3. Render reads `render.yaml` and prompts for the three `sync: false`
+   env vars (the others are pinned in the yaml):
+   - **JWT_SECRET**: generate fresh in your terminal:
+     ```
+     openssl rand -hex 64
+     ```
+     Do not reuse the dev secret. Production gets its own.
+   - **MONGODB_URI**: copy from Atlas → Connect → Drivers, replace
+     `<password>` with the user password (URL-encode special chars),
+     and add the database name before the `?`:
+     ```
+     mongodb+srv://USER:PASS@CLUSTER.mongodb.net/debt-paydown-planner?retryWrites=true&w=majority
+     ```
+   - **CORS_ORIGIN**: temporary placeholder
+     `https://placeholder.vercel.app`. The real Vercel URL goes here
+     in step 3 below.
+4. Click Apply / Deploy
+5. Wait 3-5 minutes for the first build (cold; subsequent deploys
+   are faster because the dependency cache is warm)
+6. Verify:
+   ```
+   curl https://your-service.onrender.com/health
+   ```
+   Should return `{"status":"ok"}`.
+
+## 2. Frontend (Vercel)
+
+Use **Vercel → Add New → Project**.
+
+1. Import the same GitHub repo
+2. **Root Directory: `v4-tailwind`** (this is critical and not
+   auto-detected; if you skip it, Vercel tries to build from repo
+   root and fails)
+3. Framework auto-detects as Vite. Leave the build settings alone.
+4. Environment Variable: **`VITE_API_URL` = the Render URL from
+   step 1** (no trailing slash)
+5. Click Deploy
+6. Vercel returns a URL like `https://debt-paydown-planner-<hash>.vercel.app`
+
+## 3. Wire CORS
+
+Back in Render:
+
+1. Service → Environment
+2. Update `CORS_ORIGIN` to the Vercel URL from step 2 (exact match —
+   no trailing slash, correct protocol)
+3. Save → Render auto-redeploys
+
+## 4. End-to-end verification
+
+In an incognito browser window (so no stale cookies / state):
+
+1. Open the Vercel URL → land on the sign-in screen
+2. Register → debt list shows empty
+3. Add a debt → appears in the list
+4. Refresh the page → logged out (expected; in-memory token by design)
+5. Log back in → debt persists
+6. Delete the debt → disappears
+
+If all six steps work, the deploy is good.
+
+## Gotchas
+
+The list of things that have already tripped this project up. Read
+before deploying so you avoid them.
+
+### `npm ci --include=dev` in `buildCommand`
+
+`render.yaml` sets `NODE_ENV=production`, which causes `npm ci` to
+skip `devDependencies` by default. But TypeScript itself and the
+`@types/*` packages live in `devDependencies`, and the build needs
+them. Without `--include=dev`, `npm run build` fails with a stack
+of `Cannot find module '@types/express'`-style errors.
+
+The fix is in `render.yaml` already. If you fork or rewrite the
+build pipeline, keep the flag.
+
+### Render Blueprint vs New Web Service
+
+Blueprint reads `render.yaml` and provisions the service from the
+committed config. New Web Service ignores `render.yaml` and forces
+you to fill out a form. Pick Blueprint.
+
+### Vercel Root Directory must be set explicitly
+
+Vercel does not auto-detect monorepo subfolders. If you forget to
+set Root Directory to `v4-tailwind`, Vercel tries to install + build
+from the repo root, where `package.json`'s preinstall guard
+(`scripts/block-root-install.mjs`) exits 1 on purpose. The deploy
+fails with the guard's message. Set Root Directory and re-deploy.
+
+### CORS_ORIGIN must match the Vercel URL exactly
+
+`https://app.vercel.app` and `https://app.vercel.app/` are different
+to the CORS middleware. So are protocol mismatches (`http` vs
+`https`). Copy the URL straight from Vercel and paste it into
+Render with no edits.
+
+### Database name in the MongoDB URI
+
+The connection string from Atlas → Connect → Drivers does not
+include a database name by default. The path between the host and
+`?` looks like:
+
+```
+mongodb+srv://USER:PASS@CLUSTER.mongodb.net/?retryWrites=true...
+                                            ^
+                                     no database name
+```
+
+Add `/debt-paydown-planner` (or whatever you want to call the
+database) before the `?`:
+
+```
+mongodb+srv://USER:PASS@CLUSTER.mongodb.net/debt-paydown-planner?retryWrites=true...
+```
+
+Without it, Mongoose connects but writes to the default `test`
+database, not yours. Documents land somewhere unexpected and reads
+return empty.
+
+### Atlas allowlist stays at `0.0.0.0/0`
+
+Render's free tier doesn't give static egress IPs, and Vercel's
+egress is a wide range that shifts. The pragmatic capstone-tier
+compromise is allowlist-from-anywhere on Atlas. Auth and bcrypt are
+the actual defense. Tightening the allowlist requires paid Render
+tier (egress IPs become known) or Mongo Atlas dedicated cluster
+with VPC peering.
+
+### Cold-start timing on Render free tier
+
+Free-tier services sleep after 15 minutes of inactivity. The next
+request takes 30-50 seconds while Render spins the container back
+up. For a demo, hit `/health` 30 seconds before showing the app to
+anyone:
+
+```
+curl https://your-service.onrender.com/health
+```
+
+Don't add a cron-warm or anti-cold-start mechanism for v8.
+Switching to a paid Render tier removes the sleep entirely; that's
+the upgrade path if cold start ever becomes a real demo problem.
+
+### Vercel env var changes don't auto-redeploy
+
+Vite bakes env vars into the bundle at build time. Editing
+`VITE_API_URL` on Vercel changes the dashboard value but the
+running app keeps using whatever was set when it was last built.
+After every env var change on Vercel, manually trigger a redeploy:
+Vercel → Deployments → most recent → ⋯ → Redeploy.
+
+### Render env var changes auto-redeploy
+
+The opposite of Vercel. Saving any env var change on Render
+triggers a deploy automatically. This is convenient most of the
+time but worth knowing if you change `CORS_ORIGIN` while a real
+user is mid-request — they'll see a brief outage during the
+restart.
+
+## Troubleshooting
+
+Specific failures hit while bringing this project up. Future-self,
+this is for you when you forget what tripped you in 6 months.
+
+### Build fails: `Cannot find module '@types/express'`
+
+The build is running with `NODE_ENV=production` and `npm ci` is
+skipping devDependencies. Confirm `render.yaml` has
+`buildCommand: npm ci --include=dev && npm run build`. Without
+`--include=dev`, every TypeScript build artifact is missing.
+
+### Health check times out, deploy fails
+
+The Express server `await connectMongo()`s before binding the HTTP
+port. If Mongo never connects, the port never opens, and Render's
+health check polls a port that nothing is listening on.
+
+Causes:
+
+- Atlas Network Access not set to `0.0.0.0/0`
+- `MONGODB_URI` typo (URL-encoded password lost on paste, missing
+  database name, leading/trailing whitespace)
+- Atlas database user password rotated and `.env` not updated
+- Render service in a region Atlas doesn't reach (rare)
+
+Inspect the Render service logs. Look for the pino message
+`MongoDB connected` (success) or any `MongooseServerSelectionError`
+(failure). The error message tells you which case.
+
+### CORS error in the browser console
+
+The browser refuses requests from the Vercel origin because the
+backend's `Access-Control-Allow-Origin` header doesn't match.
+
+Check:
+
+- `CORS_ORIGIN` on Render exactly matches the Vercel URL
+- No trailing slash difference (`https://app.vercel.app` ≠
+  `https://app.vercel.app/`)
+- Protocol matches (`https://...`, not `http://...`)
+- Render redeployed after you changed the env var (Render
+  auto-redeploys, but check the deploys tab to confirm)
+
+### 401 on every request after sign-in
+
+Most likely `JWT_SECRET` is empty or shorter than 32 chars on
+Render. The env schema rejects anything shorter, so the service
+won't have started, and you'd see this in Render logs at boot:
+
+```
+Invalid environment configuration:
+{ "JWT_SECRET": { "_errors": ["String must contain at least 32 character(s)"] } }
+```
+
+Generate a real secret (`openssl rand -hex 64`) and paste it into
+Render → Environment → JWT_SECRET. Save and let the auto-redeploy
+finish.
+
+If `JWT_SECRET` is fine and 401s are still happening, the access
+token may have been signed with an older secret value. The frontend
+shows "Your session expired" automatically (v8 phase 1's 401 handler).
+Sign back in to get a token signed with the current secret.
