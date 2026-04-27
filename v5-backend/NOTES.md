@@ -508,3 +508,98 @@ pattern v6 used.
   better deployment ergonomics) would put CSRF back on the table.
 - No request-id correlation. Still on the v6 carry-forward list;
   not closed in v7 either.
+
+## v8 Phase 2: Deploy
+
+The backend went live on Render and the frontend on Vercel. URLs:
+
+- Backend:  https://debt-paydown-planner-api.onrender.com
+- Frontend: https://debt-paydown-planner.vercel.app/
+
+The how-to is in `docs/DEPLOY.md`. This section is the lessons-
+learned: what surprised us, what didn't, and what's worth knowing
+the next time someone redeploys this project.
+
+### What surprised us
+
+**`npm ci` skipped devDependencies in the production build.** First
+deploy attempt failed at the build step. Render sets
+`NODE_ENV=production` before running the buildCommand, which makes
+`npm ci` skip devDependencies by default. But TypeScript itself
+and the `@types/*` packages live in devDependencies, and `tsc`
+needs them to resolve types. The build crashed with a stack of
+"Cannot find module" errors.
+
+Fix: change `buildCommand` in `render.yaml` to
+`npm ci --include=dev && npm run build`. The flag forces
+devDependencies to install regardless of NODE_ENV. Runtime
+NODE_ENV stays production for pino JSON output, helmet HSTS, and
+the morgan combined-format access log.
+
+The fix landed as `fix(v8): include devDependencies in Render
+build`. Documented in `docs/DEPLOY.md` under Gotchas and
+Troubleshooting.
+
+**Vercel did not auto-detect the Root Directory.** Vercel saw the
+repo and the package.json files, but didn't pick `v4-tailwind/` as
+the project root automatically. Had to set Root Directory =
+`v4-tailwind` manually in the Vercel dashboard before the deploy
+would even start. The repo-root preinstall guard
+(`scripts/block-root-install.mjs`) would have caught a Vercel
+build that ran from the wrong directory, but the failure message
+reads as "your install script exited 1" rather than "you forgot
+to set Root Directory." Documented in `docs/DEPLOY.md` so the
+next person doesn't waste cycles on it.
+
+### What didn't fire (anticipated gotchas that turned out fine)
+
+**Region: virginia accepted on Render free tier.** The yaml
+comment named ohio and oregon as fallbacks; neither was needed.
+Free-tier region availability shifts; future-self deploying a
+fresh project should still confirm in the dashboard rather than
+trust this.
+
+**Cold start on the first `/health` after deploy.** The 30-50
+second worst case documented in `docs/DEPLOY.md` didn't fire on
+the initial post-build request. The container was already warm
+from the build process, so the first user-facing request hit a
+ready service. The cold-start window only applies after 15
+minutes of inactivity, which the deploy moment doesn't qualify
+as. The curl-warm-before-demo advice in the deploy guide still
+stands for actual demos.
+
+**Atlas allowlist already at 0.0.0.0/0 from v6.** The deploy guide
+lists it as a prerequisite to verify; ours was already set from
+the v6 development work, so no dashboard change was needed.
+Future-self deploying a fresh project: this is real and necessary.
+
+**CORS exact-match (trailing slash, protocol).** The gotcha is
+documented, didn't bite. Possibly because the documentation made
+it visible enough to avoid; possibly because Vercel's URL is
+copy-pasteable and we didn't fat-finger it. Stays in the deploy
+guide as anticipatory advice for redeploys.
+
+**Vercel env-var redeploy gotcha.** `VITE_API_URL` got set once
+during the initial Vercel project creation and never needed to
+change for Phase 2. The "Vercel doesn't auto-redeploy on env
+changes" gotcha would matter when the backend URL changes (or if
+a value gets corrected after the first deploy). Stays in the
+deploy guide as anticipatory advice.
+
+### What's worth knowing for future deploys
+
+- **Render Blueprint, not New Web Service.** Blueprint reads
+  `render.yaml`. New Web Service ignores it.
+- **JWT_SECRET was generated fresh** via `openssl rand -hex 64`.
+  The dev secret stays in `v5-backend/.env` (gitignored) and
+  never made it to production.
+- **CORS_ORIGIN was set with the placeholder
+  `https://placeholder.vercel.app`** during the initial Render
+  deploy, then updated to the real Vercel URL after the frontend
+  deploy completed. Render auto-redeploys on env-var changes, so
+  the cutover was one save in the dashboard.
+- **MongoDB URI database name** (`/debt-paydown-planner`) matters
+  even in production. Without it Mongoose connects but writes to
+  the default `test` database. Verified in production.
+
+That's the v8 Phase 2 record.
