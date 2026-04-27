@@ -94,16 +94,13 @@ calculation. 16 tests in `src/utils/paydownCalculator.test.ts`.
 
 ## How to deploy
 
-Vercel picks up the config automatically once the project is imported.
-One-time setup in the Vercel dashboard:
-
-1. Import the GitHub repo as a new project
-2. Set **Root Directory** to `v4-tailwind/`
-3. Framework preset auto-detects as Vite. No further overrides needed.
-
-The `vercel.json` in this folder handles SPA routing fallbacks. Build
-command and output directory are inferred from the Vite framework
-preset.
+Vercel reads the framework preset and the `vercel.json` SPA rewrite
+config in this folder automatically. The two project-specific
+requirements (Root Directory must be set to `v4-tailwind`,
+`VITE_API_URL` must be set to the backend's deploy URL) and the
+"Vercel env-var changes don't auto-redeploy" gotcha are documented
+in the unified deploy guide:
+[docs/DEPLOY.md](../docs/DEPLOY.md).
 
 ## Files
 
