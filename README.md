@@ -281,6 +281,9 @@ individual data"; the canary can.
   system view across all eight versions.
 - [docs/DEPLOY.md](docs/DEPLOY.md) - production deploy guide
   for Render + Vercel + Atlas, with gotchas and troubleshooting.
+- [docs/v9-hardening.md](docs/v9-hardening.md) - threat model,
+  audit results, secret rotation procedure, and the items
+  considered and explicitly deferred during the v9 hardening pass.
 - `NOTES.md` inside each version folder - version-specific
   learning notes and a "what could be better" section tracking
   known gaps.
