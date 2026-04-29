@@ -1244,3 +1244,38 @@ ExtractionError envelope.
 investigating first. Investigation runs in parallel with the
 restart, not before it. The 30-second restart window is small
 relative to the time to confirm a leak.
+
+### Calculator duplication, considered and deferred
+
+The paydown calculator (~200 lines: avalanche, snowball, and the
+month-by-month schedule loop) lives in two places:
+
+- `v5-backend/src/utils/paydownCalculator.ts` runs on POST /paydown.
+- `v4-tailwind/src/utils/paydownCalculator.ts` runs client-side in
+  `StrategyComparison` so both strategies render without a round
+  trip.
+
+Both copies are tested independently. They're the same code today,
+but nothing prevents them from drifting.
+
+Dedup options considered:
+
+- **Shared package via npm workspaces.** The architecturally clean
+  option. The cost is real: Render's deploy config has to learn how
+  to install workspaces from the repo root, and the shared package
+  has to ship as compiled JavaScript instead of TypeScript source
+  so the backend's stricter module resolution can import it. Both
+  changes can break the live demo and would need careful testing.
+- **Shared file at the repo root.** Both apps import from
+  `../shared/paydownCalculator.ts`. Vite (the frontend bundler)
+  expects files inside the project root and doesn't handle this
+  layout cleanly. Workable but rough to read.
+- **Copy at build time.** A script copies the canonical source into
+  both apps before each build. Easy to set up, easy to forget, easy
+  to break.
+
+Chose to leave the duplication in place. The dedup saves ~200 lines
+but introduces build complexity and deploy risk. The independent
+test suites catch divergence in CI, which is the real risk worth
+controlling. Revisit if the calculator grows past ~500 lines or a
+third consumer appears.
