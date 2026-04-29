@@ -1,5 +1,7 @@
 # Debt Paydown Planner
 
+[![CI](https://github.com/joekavanagh98/debt-paydown-planner/actions/workflows/ci.yml/badge.svg)](https://github.com/joekavanagh98/debt-paydown-planner/actions/workflows/ci.yml)
+
 A consumer-facing web app for paying down debt by the avalanche
 method (highest interest rate first). Given a list of debts and a
 monthly budget, it computes a month-by-month payoff plan: minimum

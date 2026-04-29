@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      # fail-fast off so all four apps report independently. One app failing
+      # shouldn't hide whether the others are healthy.
+      fail-fast: false
+      matrix:
+        app: [v2-react, v3-typescript, v4-tailwind, v5-backend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      # mongodb-memory-server downloads a Mongo binary on first use. Cache it
+      # so v5-backend's supertest suite doesn't re-download every run.
+      - uses: actions/cache@v4
+        if: matrix.app == 'v5-backend'
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongo-${{ runner.os }}
+
+      - name: Install
+        working-directory: ${{ matrix.app }}
+        run: npm ci
+
+      # --if-present is load-bearing: v2-react has no test script (vanilla
+      # React with no test suite), so npm would fail without it.
+      - name: Build
+        working-directory: ${{ matrix.app }}
+        run: npm run build --if-present
+
+      - name: Test
+        working-directory: ${{ matrix.app }}
+        run: npm test --if-present
