@@ -1,0 +1,45 @@
+version: 2
+updates:
+  # One entry per app folder. v1-vanilla has no package.json so no
+  # entry. Minor and patch updates are grouped into a single weekly
+  # PR per app rather than one PR per package, which would flood the
+  # PR queue. Major bumps still come through as their own PRs because
+  # they often need a code change to merge cleanly.
+  - package-ecosystem: npm
+    directory: /v2-react
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /v3-typescript
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /v4-tailwind
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /v5-backend
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # The CI workflow pins actions/checkout, actions/setup-node, and
+  # actions/cache to specific majors. Dependabot bumps those too.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
