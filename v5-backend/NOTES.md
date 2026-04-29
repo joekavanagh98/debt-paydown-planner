@@ -1042,3 +1042,34 @@ runs in ~3s, same as Phase 3.
 - **Server-driven role changes via API**. As above, promotion is
   intentionally manual. A `/auth/promote` route gated by an admin
   role is the natural extension if a v9 admin surface needs it.
+
+## v9: Hardening pass
+
+A pass closing security and operational gaps surfaced by code review:
+DoS hygiene (body limit, input bounds, paydown rate limit), register
+enumeration (atomic per-email counter), JWT shape check, and an audit
+pass on logging and security headers. Each landed as a separate small
+commit with tests.
+
+### Helmet header audit
+
+curl -I against the live api, diffed against helmet 8 source. All
+defaults reach the client through Render and Cloudflare. Headers
+verified: CSP, HSTS (365 days, no preload directive), COOP, CORP,
+COEP (unset by helmet default since v7), Origin-Agent-Cluster,
+Referrer-Policy, X-Frame-Options, X-Content-Type-Options,
+X-XSS-Protection.
+
+Two non-trivial defaults left in place:
+
+- CSP `style-src` includes `'unsafe-inline'`. Recharts emits inline
+  styles for chart elements; tightening would break the dashboard
+  and the strategy comparison charts.
+- COEP unset. Requiring CORP/CORS on every embedded resource is too
+  aggressive for an app that loads images and external fonts.
+
+HSTS preload is opt-in (the domain has to be submitted to the preload
+list and the directive added to the helmet config). Out of scope here.
+
+Conclusion: helmet defaults match this app's threat model. No code
+change.
