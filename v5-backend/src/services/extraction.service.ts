@@ -78,15 +78,19 @@ const tool: Anthropic.Messages.Tool = {
 export async function extractDebtsFromText(
   text: string,
 ): Promise<ExtractionResult> {
-  // Prompt-injection defense layer 1: wrap the untrusted text in
-  // <statement> tags so the system prompt can name the boundary
-  // and tell the model that what's inside the tags is data, not
-  // instructions. Layer 2 is the system-prompt hardening above.
-  // Layer 3 is the user reviewing each extracted debt before it
-  // saves (frontend in commit c4). See NOTES for the full defense
-  // model and the threats this combination does and doesn't
-  // address.
-  const wrappedInput = `<statement>\n${text}\n</statement>`;
+  // The wrap is a hint to the model that the enclosed text is user
+  // data, not instructions. The real injection defenses are the
+  // system prompt's explicit "data only" rule and tool_choice forcing
+  // structured output regardless of what the model outputs in prose.
+  //
+  // Stripping any literal </statement> from the input first closes a
+  // small evasion path in the hint layer. Without the strip, a user
+  // could paste text containing </statement> followed by injection
+  // attempts, and the second half would appear to the model as if it
+  // arrived outside the wrap. Case-insensitive because the model
+  // doesn't care about the case of XML-ish tags either.
+  const stripped = text.replace(/<\/statement>/gi, "");
+  const wrappedInput = `<statement>\n${stripped}\n</statement>`;
 
   const response = await client.messages.create({
     model: MODEL,
