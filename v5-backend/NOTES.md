@@ -1127,9 +1127,10 @@ is the load-bearing defense for that class.
 **Token theft.** A stolen JWT is valid until expiry. Mitigations:
 15-minute access token TTL; no refresh tokens, so the attacker has to
 re-steal after each cycle; `JWT_SECRET` rotation invalidates all
-outstanding tokens at once (see "Secret rotation"). Residual: no
-revocation list. A stolen token is valid for up to 15 minutes after
-the user notices, until they rotate the secret.
+outstanding tokens at once (procedure documented under "Secret
+rotation" below). Residual: no revocation list. A stolen token is
+valid for up to 15 minutes after the user notices, until they rotate
+the secret.
 
 **PII in logs.** Server logs are visible to anyone with Render
 access. If logs include customer debt narratives, balances, or
@@ -1196,3 +1197,50 @@ list and the directive added to the helmet config). Out of scope here.
 
 Conclusion: helmet defaults match this app's threat model. No code
 change.
+
+### Secret rotation
+
+Two production secrets, both live in Render env vars:
+`JWT_SECRET` (signs and verifies access tokens) and
+`ANTHROPIC_API_KEY` (authenticates the extraction call to Claude).
+There's no KMS or vault layer at this scale; the env var IS the
+storage. The procedures below assume Render is the source of truth
+and that the rotator has dashboard access.
+
+**JWT_SECRET rotation.**
+
+1. Generate a new secret: `openssl rand -base64 64`.
+2. Paste into Render's env var for the API service. Save.
+3. Render auto-restarts the service (about 30 seconds).
+4. All existing JWTs become invalid the moment the new process is
+   serving requests. Users see a 401 on their next authenticated
+   request and re-login.
+
+During the ~30 second restart window, in-flight requests may
+complete against the old secret. Once the new process is serving
+traffic, all old JWTs are rejected. There's no graceful overlap
+window where both secrets are accepted; this is acceptable because
+the worst case is "user sees one 401 and re-logs in."
+
+User-visible impact is bounded by the 15-minute access token TTL
+even without rotation; a forced rotation just collapses that window
+to "instantly." Since there are no refresh tokens, there's nothing
+else to revoke.
+
+**ANTHROPIC_API_KEY rotation.**
+
+1. In the Anthropic console, create a new API key on the same
+   project. Spend limits stay attached to the project, not the key.
+2. Update `ANTHROPIC_API_KEY` in Render. Save.
+3. Render auto-restarts.
+4. In the Anthropic console, revoke the old key.
+
+No user-visible impact. The extraction endpoint may serve a single
+in-flight request with the old key around the restart boundary;
+that request either completes or fails with the standard
+ExtractionError envelope.
+
+**If a secret is suspected leaked.** Rotate immediately rather than
+investigating first. Investigation runs in parallel with the
+restart, not before it. The 30-second restart window is small
+relative to the time to confirm a leak.
