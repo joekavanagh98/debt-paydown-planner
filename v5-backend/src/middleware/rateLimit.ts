@@ -69,3 +69,34 @@ export const extractionRateLimit: RequestHandler = rateLimit({
     },
   },
 });
+
+/**
+ * Rate limiter for /paydown. 60 requests per user per minute, keyed by
+ * userId with the same IP fallback as extractionRateLimit.
+ *
+ * Why this exists: /paydown is the most computationally expensive
+ * endpoint in the app. Even with the input bounds (50 debts, 600-month
+ * cap), it's a CPU-bound loop that holds the event loop while it runs.
+ * 60/min is generous enough that a real user re-running "what if I add
+ * $50 to my budget?" never feels it, but tight enough that an
+ * automated abuser saturating the CPU has to spread the load across
+ * many accounts to make any progress.
+ *
+ * Same userId-keying rationale as extractionRateLimit: the unit of
+ * cost is the user, so the unit of quota is the user.
+ */
+export const paydownRateLimit: RequestHandler = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isTest,
+  keyGenerator: (req: Request): string =>
+    req.userId ?? `ip:${req.ip ?? "unknown"}`,
+  message: {
+    error: {
+      code: "rate_limited",
+      message: "Too many paydown requests. Try again in a minute.",
+    },
+  },
+});
