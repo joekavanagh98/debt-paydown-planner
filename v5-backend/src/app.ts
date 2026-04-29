@@ -30,7 +30,11 @@ export function buildApp(): express.Express {
   // get a log line.
   app.use(requestLogger);
 
-  app.use(express.json());
+  // 32kb covers the ~5kb extraction text and every other endpoint with
+  // headroom. Anything larger is either a bug or an attempt to chew up
+  // memory on the parse step. The errorHandler renders the resulting
+  // PayloadTooLarge error as a 413 with the standard envelope.
+  app.use(express.json({ limit: "32kb" }));
 
   app.use(router);
 

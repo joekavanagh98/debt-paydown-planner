@@ -52,6 +52,21 @@ describe("unmounted routes", () => {
   });
 });
 
+describe("express.json body limit", () => {
+  it("returns 413 with the standard envelope when the body exceeds 32kb", async () => {
+    // 33kb of filler in an extra field. The body-parser rejects the
+    // payload before the schema validator runs, so it doesn't matter
+    // that `junk` would fail strict-mode validation downstream.
+    const oversize = "a".repeat(33 * 1024);
+    const res = await request(app)
+      .post("/auth/register")
+      .set("Content-Type", "application/json")
+      .send({ email: "big@test.com", password: PASSWORD, junk: oversize });
+    expect(res.status).toBe(413);
+    expect(res.body.error.code).toBe("payload_too_large");
+  });
+});
+
 // ---- requireAuth middleware (exercised through /debts) ----
 
 describe("requireAuth middleware (via /debts)", () => {
