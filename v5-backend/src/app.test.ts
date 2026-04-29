@@ -487,4 +487,65 @@ describe("/paydown with auth", () => {
     expect(res.status).toBe(200);
     expect(res.body.feasible).toBe(true);
   });
+
+  it("rejects more than 50 debts in a single request", async () => {
+    const { token } = await registerAndLogin("paydown-bounds-1@test.com");
+    const debts = Array.from({ length: 51 }, (_, i) => ({
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      name: `D${i}`,
+      balance: 100,
+      rate: 10,
+      minPayment: 10,
+    }));
+    const res = await request(app)
+      .post("/paydown")
+      .set(auth(token))
+      .send({ debts, budget: 1000, strategy: "avalanche" });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("validation_error");
+  });
+
+  it("rejects an unrealistic balance above 10M", async () => {
+    const { token } = await registerAndLogin("paydown-bounds-2@test.com");
+    const res = await request(app)
+      .post("/paydown")
+      .set(auth(token))
+      .send({
+        debts: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "Mortgage",
+            balance: 1e8,
+            rate: 5,
+            minPayment: 100,
+          },
+        ],
+        budget: 5000,
+        strategy: "avalanche",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("validation_error");
+  });
+
+  it("rejects a rate above 100%", async () => {
+    const { token } = await registerAndLogin("paydown-bounds-3@test.com");
+    const res = await request(app)
+      .post("/paydown")
+      .set(auth(token))
+      .send({
+        debts: [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "Loan",
+            balance: 5000,
+            rate: 101,
+            minPayment: 100,
+          },
+        ],
+        budget: 300,
+        strategy: "avalanche",
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("validation_error");
+  });
 });
