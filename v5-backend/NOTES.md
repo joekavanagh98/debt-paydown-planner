@@ -1051,6 +1051,31 @@ enumeration (atomic per-email counter), JWT shape check, and an audit
 pass on logging and security headers. Each landed as a separate small
 commit with tests.
 
+### PII logging audit
+
+Read-only pass through `src/` to map what could end up in log files.
+Five logger call sites, none log user data:
+
+- `server.ts`: startup port, shutdown signal.
+- `mongo.ts`: connection lifecycle.
+- `requestLogger.ts`: pipes morgan into pino. Morgan `combined` logs
+  method, URL, status, content-length, referrer, user-agent. URLs
+  carry UUID `:id` params only; sensitive data is in POST bodies,
+  which morgan doesn't log.
+- `errorHandler.ts`: `logger.error({ err }, "Unhandled error")` only
+  fires on non-AppError throws, so handled errors (auth, validation,
+  conflict, etc.) never reach it. AppError messages are hardcoded
+  except for `Debt ${id} not found` where `id` is a UUID.
+
+Statement text from `/debts/extract` is wrapped and sent to
+Anthropic but never logged. Anthropic SDK errors don't carry the
+original request body, so a network failure on that call doesn't
+leak the wrapped text either.
+
+Forward rule: error messages stay hardcoded or interpolate UUIDs
+only. If a future change interpolates user input into a thrown
+message, this audit needs to be redone.
+
 ### Helmet header audit
 
 curl -I against the live api, diffed against helmet 8 source. All
