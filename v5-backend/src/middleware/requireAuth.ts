@@ -3,6 +3,9 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { UnauthorizedError } from "../errors/AppError.js";
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Verify the Bearer token from the Authorization header and attach
  * the user id to req. Mounted in front of every route that needs an
@@ -40,6 +43,14 @@ export const requireAuth: RequestHandler = (
   }
 
   if (typeof decoded === "string" || typeof decoded.sub !== "string") {
+    throw new UnauthorizedError("Invalid or expired token");
+  }
+
+  // sub gets used downstream as a Mongo _id (UUID). The issuance side
+  // signs UUIDs today, but a future change there shouldn't silently
+  // produce tokens that pass this middleware and fail (or worse,
+  // succeed unexpectedly) at the database layer.
+  if (!UUID_REGEX.test(decoded.sub)) {
     throw new UnauthorizedError("Invalid or expired token");
   }
 

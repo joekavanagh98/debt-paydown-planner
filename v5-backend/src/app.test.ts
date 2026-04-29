@@ -107,6 +107,18 @@ describe("requireAuth middleware (via /debts)", () => {
     expect(res.status).toBe(401);
   });
 
+  it("rejects tokens whose sub claim is a string but not a UUID", async () => {
+    const badShape = jwt.sign(
+      { sub: "not-a-uuid" },
+      process.env.JWT_SECRET ?? "",
+    );
+    const res = await request(app)
+      .get("/debts")
+      .set(auth(badShape));
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe("unauthorized");
+  });
+
   it("attaches userId for valid tokens (proven by /debts returning the empty list scoped to that user)", async () => {
     const { token } = await registerAndLogin("middleware@test.com");
     const res = await request(app).get("/debts").set(auth(token));
