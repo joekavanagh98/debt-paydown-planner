@@ -1051,6 +1051,104 @@ enumeration (atomic per-email counter), JWT shape check, and an audit
 pass on logging and security headers. Each landed as a separate small
 commit with tests.
 
+### Threat model
+
+Lays out the realistic threats this app faces and the mitigations in
+place. The residuals are documented honestly so future work has a
+clear list of what's not covered.
+
+**Scope and assumptions.** This threat model covers the deployed
+web application as it exists in v9. It assumes the deployment
+platform (Render, MongoDB Atlas, Vercel) is trusted, the developer's
+GitHub account is trusted, and secrets stored in Render env vars
+are not visible to attackers without compromising Render itself.
+Out of scope: supply-chain attacks on npm dependencies,
+infrastructure-level threats below the application layer, and
+social engineering of the developer.
+
+**Credential stuffing.** Attacker submits stolen email/password pairs
+to `/auth/login`. Mitigations: bcrypt cost 12 makes each guess cost
+~250ms of CPU; `authRateLimit` caps a single IP at 3 attempts per
+hour. Residual: distributed credential stuffing across many IPs is
+slowed but not stopped. No 2FA, no leaked-password check against a
+HIBP-style list.
+
+**Email enumeration on login.** Different responses or different
+response times for "email exists, password wrong" vs. "no such email"
+let an attacker check whether an email has an account. Mitigations:
+identical 401 message either way; the dummy bcrypt hash in
+`auth.service.ts` runs against the wrong-password input when no user
+is found, so the wall-clock time matches the real-user case. Residual:
+the timing equivalence depends on bcrypt's cost factor remaining the
+same for both the dummy hash (computed at module load) and real
+password hashing. A future change to `BCRYPT_COST` would update both
+at restart. The defense is brittle in the sense that it depends on
+this invariant being maintained by code structure rather than
+enforced by tooling.
+
+**Email enumeration on register.** A 409 on duplicate email tells the
+attacker the email exists. Mitigations: `authRateLimit` (IP-keyed)
+plus the per-email atomic counter in `RegisterAttempt` (cross-IP, 3
+per email per 24h). After the cap, every attempt returns 429 instead
+of 409. Residual: the 409 itself before the cap is reached still
+leaks one bit per attempt; the rate limits make extraction slow but
+not impossible. The proper fix is email verification: register always
+returns 202, account stays pending until activated. Out of scope here
+because it requires a transactional email provider.
+
+**DoS via expensive endpoints.** A single client driving the
+calculator or the extraction model in a loop ties up the event loop.
+Mitigations: `express.json` limit at 32kb (parse-time cap); upper
+bounds on `/paydown` inputs (50 debts, $1M budget, $10M balance, 100%
+rate); `paydownRateLimit` at 60/min per user; `extractionRateLimit`
+at 10/hour per user. Residual: the limits cap blast radius per user
+but don't address coordinated traffic across many accounts. Render's
+free tier is the deployment-side floor. The extraction endpoint also
+has a per-call AI cost dimension that the rate limits don't fully
+cap — many accounts each making 10 calls/hour could still drive
+cumulative API spend; the Anthropic-side deployment budget is the
+secondary backstop.
+
+**Prompt injection on `/debts/extract`.** Pasted statement text could
+contain instructions targeting the model.
+
+Mitigations:
+
+- System prompt declares `<statement>` content as data-only
+- `tool_choice` forces the model to produce a structured tool call
+  regardless of free-text prose
+- Hint layer strips literal `</statement>` from input before wrapping
+- Human-in-the-loop review on the frontend before any debt is saved
+
+Residual: the model could still skip rows or merge accounts
+incorrectly under adversarial inputs; the human-in-the-loop review
+is the load-bearing defense for that class.
+
+**Token theft.** A stolen JWT is valid until expiry. Mitigations:
+15-minute access token TTL; no refresh tokens, so the attacker has to
+re-steal after each cycle; `JWT_SECRET` rotation invalidates all
+outstanding tokens at once (see "Secret rotation"). Residual: no
+revocation list. A stolen token is valid for up to 15 minutes after
+the user notices, until they rotate the secret.
+
+**PII in logs.** Server logs are visible to anyone with Render
+access. If logs include customer debt narratives, balances, or
+email addresses, that's a compliance issue at a regulated lender.
+Mitigation: audited every `logger.*` call and every `throw new
+Error(...)` site for customer-data interpolation; sanitized findings
+to log structural facts (debt counts, durations, UUIDs) instead of
+values. Residual: the rule is enforced by reviewer judgment, not
+tooling. A pre-commit grep for `throw new Error\(.*\$\{` would
+automate detection of the most common regression pattern.
+
+**CSRF.** A malicious site triggers state-changing requests using a
+logged-in user's credentials. Mitigations: the JWT lives in
+`Authorization: Bearer ...`, not a cookie, so a cross-site request
+can't ride along with an existing session. CORS is pinned to the
+single configured frontend origin via `env.CORS_ORIGIN`. Residual:
+if the frontend ever moves to cookie-based auth the app needs a
+CSRF token mechanism; it does not have one today.
+
 ### PII logging audit
 
 Read-only pass through `src/` to map what could end up in log files.
