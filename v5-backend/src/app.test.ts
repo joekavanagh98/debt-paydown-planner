@@ -146,6 +146,27 @@ describe("POST /auth/register", () => {
     expect(badEmail.status).toBe(400);
     expect(badEmail.body.error.code).toBe("validation_error");
   });
+
+  it("returns 429 once the same email hits the per-email attempt cap", async () => {
+    // First attempt creates the account (count=1).
+    const r1 = await register("counter@test.com");
+    expect(r1.status).toBe(201);
+
+    // Attempts 2 and 3 hit the unique-index duplicate-key path
+    // (count=2, count=3). The counter increments before bcrypt so
+    // even the 409 cases consume quota.
+    const r2 = await register("counter@test.com");
+    expect(r2.status).toBe(409);
+
+    const r3 = await register("counter@test.com");
+    expect(r3.status).toBe(409);
+
+    // Attempt 4 fails the counter check before reaching bcrypt or
+    // the duplicate-key path. 429 with the standard envelope.
+    const r4 = await register("counter@test.com");
+    expect(r4.status).toBe(429);
+    expect(r4.body.error.code).toBe("rate_limited");
+  });
 });
 
 // ---- POST /auth/login ----

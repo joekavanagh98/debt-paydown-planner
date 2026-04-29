@@ -1,7 +1,12 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
-import { ConflictError, UnauthorizedError } from "../errors/AppError.js";
+import {
+  ConflictError,
+  RateLimitError,
+  UnauthorizedError,
+} from "../errors/AppError.js";
+import { RegisterAttemptModel } from "../models/registerAttempt.model.js";
 import {
   UserModel,
   toUserPublic,
@@ -42,7 +47,33 @@ function signToken(userId: string): string {
   });
 }
 
+// Per-email register attempt cap. authRateLimit catches single-IP
+// abuse; this counter catches the cross-IP enumeration case. 3 over
+// 24h is tighter than any plausible legit retry pattern (a real signup
+// is one schema-valid attempt).
+const REGISTER_ATTEMPT_LIMIT = 3;
+const REGISTER_ATTEMPT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export async function registerUser(input: RegisterInput): Promise<UserPublic> {
+  // Atomic increment-or-insert. See registerAttempt.model.ts for why
+  // this shape (atomicity, $setOnInsert, the email-as-_id trick).
+  const attempt = await RegisterAttemptModel.findOneAndUpdate(
+    { _id: input.email },
+    {
+      $inc: { count: 1 },
+      $setOnInsert: {
+        expiresAt: new Date(Date.now() + REGISTER_ATTEMPT_WINDOW_MS),
+      },
+    },
+    { upsert: true, returnDocument: "after" },
+  );
+
+  if (attempt.count > REGISTER_ATTEMPT_LIMIT) {
+    throw new RateLimitError(
+      "Too many registration attempts for this email. Try again later.",
+    );
+  }
+
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_COST);
 
   try {

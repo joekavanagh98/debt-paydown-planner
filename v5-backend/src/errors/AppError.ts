@@ -56,6 +56,18 @@ export class ForbiddenError extends AppError {
   }
 }
 
+/**
+ * 429. For cases the service layer enforces itself.
+ * express-rate-limit middleware returns 429 directly and does not
+ * route through this handler, so this class is only used when a
+ * service throws a rate-limit decision of its own.
+ */
+export class RateLimitError extends AppError {
+  constructor(message: string = "Too many requests") {
+    super(429, "rate_limited", message);
+  }
+}
+
 export class ExtractionError extends AppError {
   /**
    * Used when the upstream LLM returns something we can't parse into
