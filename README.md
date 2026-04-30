@@ -48,9 +48,10 @@ in dollars and months.
 Paste a credit card or loan statement; Claude extracts the
 structured debt fields (name, balance, APR, minimum payment) and
 returns them as editable review cards. Three layers of
-prompt-injection defense: delimiter-wrapped user input, hardened
-system prompt, and review-before-save (the user has to click
-"Add this debt" on each row before it persists).
+prompt-injection defense: a system-prompt instruction marking the
+wrapped input as data-only, `tool_choice` forcing structured output
+regardless of free-text prose, and review-before-save (the user
+has to click "Add this debt" on each row before it persists).
 
 | Input | Review |
 |---|---|
@@ -84,8 +85,10 @@ charts to the AI extraction review works at phone widths.
   cannot read or modify another's debts. Enforced at the service
   layer and verified by supertest cross-user isolation tests.
 - **Rate limits** keyed appropriately per route: IP-keyed on the
-  auth surface (5 per 15 min), userId-keyed on the AI extraction
-  endpoint (10 per hour) since the cost is per-user.
+  auth surface (3 per hour), a per-email atomic counter on register
+  (3 per email per 24 hours, catches enumeration spread across IPs),
+  userId-keyed on `/paydown` (60 per minute) and on the AI
+  extraction endpoint (10 per hour) since the cost is per-user.
 - **Helmet security headers** including HSTS in production, CORS
   pinned to the deployed Vercel origin.
 - **Centralized error handling** with a single JSON error
@@ -119,6 +122,7 @@ commit history and from the directory tree. Each version's
 | [v6](v5-backend/) | MongoDB Atlas, Mongoose | Persistent storage in v5-backend (in-place modification), UUID `_id`, mongodb-memory-server for tests, graceful shutdown, schema/type consolidation via `z.infer` | Complete |
 | [v7](v5-backend/) | JWT, bcrypt, helmet, express-rate-limit | JWT auth in v5-backend (in-place modification), bcrypt hashing with constant-time-ish login defense, per-user scoped debts, helmet security headers, IP-based rate limiting on auth endpoints, CORS array form | Complete |
 | [v8](v5-backend/) | Render + Vercel + Anthropic SDK | Render Blueprint backend deploy and Vercel frontend deploy, Claude-backed debt extraction from pasted statements via tool use, three-layer prompt-injection defense (delimiter wrap, prompt hardening, review-before-save), per-user rate limit, role-gated staff dashboard with aggregate-only metrics and a leak-canary test enforcing the privacy invariant | Complete |
+| [v9](v5-backend/) | (same stack as v8) | Hardening pass: input bounds and a per-user rate limit on `/paydown`, atomic per-email register counter for cross-IP enumeration, JWT shape check, prompt-injection wrap fix, body-size limit, frontend error boundary, GitHub Actions CI, Dependabot, three frontend component tests. See [docs/v9-hardening.md](docs/v9-hardening.md). | Complete |
 
 ## Architecture
 
@@ -203,11 +207,11 @@ For deploying the v8 stack to Render and Vercel, see
 ## Tests
 
 ```sh
-cd v5-backend && npm test    # 55 tests across calculator,
+cd v5-backend && npm test    # 62 tests across calculator,
                              # services, and supertest end-to-end
 
-cd v4-tailwind && npm test   # 16 calculator tests
-                             # (component tests deferred to v9+)
+cd v4-tailwind && npm test   # 26 tests across calculator,
+                             # error boundary, and components
 ```
 
 ## Why I built this
