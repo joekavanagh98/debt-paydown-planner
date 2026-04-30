@@ -189,18 +189,29 @@ lazy-load the chart with `React.lazy` and `Suspense` so the
 comparison numbers render immediately and the chart follows after a
 small delay.
 
-### Still no component tests
+### Still no component tests. **Fixed in v9.**
 
-16 calculator tests, 0 component tests. The form, the delete
-button, the strategy comparison rendering, all untested. Planned
-for v5 or v6 once there is a backend to stub.
+v4 originally shipped with 16 calculator tests and zero component
+tests. v9 added a vitest jsdom setup and tests for `ErrorBoundary`,
+`DebtForm`, `StrategyComparison`, and `AuthGate` — 11 component
+tests on top of the calculator suite. Targeted at the integration
+points where logic-meets-rendering is most likely to break silently
+(form validation, calculator-to-card values, auth-context wiring,
+render-error fallback).
 
-### Silent form validation
+### Silent form validation. **Fixed in v9.**
 
-Carried forward from v2 and v3. Invalid inputs bail out of the
-submit handler with no UI feedback. HTML `required` and `min`
-catch most cases at the browser level, but there is still a silent
-path. Needs per-field error state in `DebtForm`.
+Original v4 behavior: invalid inputs to `DebtForm` bailed out of
+the submit handler with no UI feedback. The form has `noValidate`
+set, so HTML5 `required` and `min` don't fire either. A user
+clicking "Add Debt" with an empty field saw nothing happen.
+
+v9 adds per-field error state, surfaces a message under each
+input, switches the input border to red on error, and clears the
+error as soon as the user edits that field. `aria-invalid` and
+`aria-describedby` wire each input to its error for screen
+readers. Same pattern was extended to `BudgetInput` for the
+case where a non-empty budget can't drive a comparison.
 
 ### Per-debt payoff order
 

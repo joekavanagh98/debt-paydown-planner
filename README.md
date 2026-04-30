@@ -210,7 +210,7 @@ For deploying the v8 stack to Render and Vercel, see
 cd v5-backend && npm test    # 62 tests across calculator,
                              # services, and supertest end-to-end
 
-cd v4-tailwind && npm test   # 26 tests across calculator,
+cd v4-tailwind && npm test   # 27 tests across calculator,
                              # error boundary, and components
 ```
 
