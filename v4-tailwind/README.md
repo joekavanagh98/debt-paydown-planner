@@ -1,9 +1,10 @@
 # v4 / v8 - Tailwind CSS Frontend
 
 v4 stood up the Tailwind UI, charts, and the avalanche/snowball
-comparison. v8 phase 1 wired this frontend up to the v5/v6/v7
-backend (auth, per-user debts, MongoDB persistence). Subsequent v8
-phases add deploy, AI debt extraction, and the staff view.
+comparison. v8 wired this frontend up to the v5/v6/v7 backend
+(auth, per-user debts, MongoDB persistence) across four phases:
+deploy, AI debt extraction, the staff view, and the auth gate
+that ties them together.
 
 ## What this is
 
@@ -52,13 +53,8 @@ Plus what v8 phase 1 adds:
 
 ## What does NOT yet ship
 
-These features still belong to later v8 phases:
-
-- Production deployment of frontend + backend (v8 phase 2)
-- AI-assisted debt extraction from PDF statements (v8 phase 3)
-- Staff dashboard (v8 phase 4)
-- Refresh-token flow (deferred to v9+; the in-memory token strategy
-  trades refresh-survival for XSS safety, see NOTES.md)
+- Refresh-token flow (deferred again in v9; the in-memory token
+  strategy trades refresh-survival for XSS safety, see NOTES.md)
 - Server-side user preferences (budget currently uses localStorage
   per-user-id as a stopgap)
 
@@ -89,8 +85,8 @@ npm test            # one-shot, CI-style
 npm run test:watch  # interactive Vitest UI
 ```
 
-The test suite covers both strategies and the minimum-payment
-calculation. 16 tests in `src/utils/paydownCalculator.test.ts`.
+27 tests across the calculator, the error boundary, and three
+component suites (`DebtForm`, `StrategyComparison`, `AuthGate`).
 
 ## How to deploy
 
