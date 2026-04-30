@@ -32,16 +32,33 @@ describe("DebtForm", () => {
     });
   });
 
-  it("does not call onAdd when required fields are empty", async () => {
+  it("surfaces inline errors on each empty field instead of failing silently", async () => {
     const onAdd = vi.fn().mockResolvedValue(undefined);
     render(<DebtForm onAdd={onAdd} />);
 
     fireEvent.click(screen.getByRole("button", { name: /add debt/i }));
 
-    // The handler runs synchronously and early-returns on invalid
-    // input. Yield the event loop once so any state work flushes,
-    // then assert nothing was called.
-    await Promise.resolve();
+    expect(await screen.findByText(/name is required/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/balance must be a positive number/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/rate must be 0 or higher/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/minimum payment must be 0 or higher/i),
+    ).toBeInTheDocument();
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it("clears a field's error as soon as the user edits it", async () => {
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    render(<DebtForm onAdd={onAdd} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add debt/i }));
+    expect(await screen.findByText(/name is required/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/^name$/i), {
+      target: { value: "Visa" },
+    });
+    expect(screen.queryByText(/name is required/i)).not.toBeInTheDocument();
   });
 });

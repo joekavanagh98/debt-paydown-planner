@@ -16,6 +16,8 @@ interface DebtFormDraft {
   minPayment: string;
 }
 
+type FieldErrors = Partial<Record<keyof DebtFormDraft, string>>;
+
 const EMPTY_FORM: DebtFormDraft = {
   name: "",
   balance: "",
@@ -25,16 +27,29 @@ const EMPTY_FORM: DebtFormDraft = {
 
 const inputClass =
   "mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-base shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200";
+const errorInputClass =
+  "mt-1 w-full rounded-md border border-red-300 px-3 py-2 text-base shadow-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-200";
 const labelClass = "block text-sm font-medium text-slate-700";
+const errorTextClass = "mt-1 text-xs text-red-700";
 
 function DebtForm({ onAdd }: DebtFormProps) {
   const [form, setForm] = useState<DebtFormDraft>(EMPTY_FORM);
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const name = e.target.name as keyof DebtFormDraft;
     const value = e.target.value;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // Clear the field's error as soon as the user edits it. The
+    // submit handler will re-validate and re-attach errors if the
+    // new value still doesn't pass.
+    setErrors((prev) => {
+      if (prev[name] === undefined) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -46,11 +61,26 @@ function DebtForm({ onAdd }: DebtFormProps) {
     const rate = parseFloat(form.rate);
     const minPayment = parseFloat(form.minPayment);
 
-    if (!name) return;
-    if (!Number.isFinite(balance) || balance <= 0) return;
-    if (!Number.isFinite(rate) || rate < 0) return;
-    if (!Number.isFinite(minPayment) || minPayment < 0) return;
+    const nextErrors: FieldErrors = {};
+    if (!name) {
+      nextErrors.name = "Name is required.";
+    }
+    if (!Number.isFinite(balance) || balance <= 0) {
+      nextErrors.balance = "Balance must be a positive number.";
+    }
+    if (!Number.isFinite(rate) || rate < 0) {
+      nextErrors.rate = "Rate must be 0 or higher.";
+    }
+    if (!Number.isFinite(minPayment) || minPayment < 0) {
+      nextErrors.minPayment = "Minimum payment must be 0 or higher.";
+    }
 
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      return;
+    }
+
+    setErrors({});
     setSubmitting(true);
     try {
       await onAdd({ name, balance, rate, minPayment });
@@ -85,8 +115,15 @@ function DebtForm({ onAdd }: DebtFormProps) {
             maxLength={40}
             placeholder="Visa, Car Loan, Student Loan..."
             required
-            className={inputClass}
+            aria-invalid={errors.name !== undefined}
+            aria-describedby={errors.name ? "form-name-error" : undefined}
+            className={errors.name ? errorInputClass : inputClass}
           />
+          {errors.name && (
+            <p id="form-name-error" className={errorTextClass}>
+              {errors.name}
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="form-balance" className={labelClass}>
@@ -103,8 +140,17 @@ function DebtForm({ onAdd }: DebtFormProps) {
             step="0.01"
             placeholder="5000.00"
             required
-            className={inputClass}
+            aria-invalid={errors.balance !== undefined}
+            aria-describedby={
+              errors.balance ? "form-balance-error" : undefined
+            }
+            className={errors.balance ? errorInputClass : inputClass}
           />
+          {errors.balance && (
+            <p id="form-balance-error" className={errorTextClass}>
+              {errors.balance}
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="form-rate" className={labelClass}>
@@ -121,8 +167,15 @@ function DebtForm({ onAdd }: DebtFormProps) {
             step="0.01"
             placeholder="19.99"
             required
-            className={inputClass}
+            aria-invalid={errors.rate !== undefined}
+            aria-describedby={errors.rate ? "form-rate-error" : undefined}
+            className={errors.rate ? errorInputClass : inputClass}
           />
+          {errors.rate && (
+            <p id="form-rate-error" className={errorTextClass}>
+              {errors.rate}
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="form-min-payment" className={labelClass}>
@@ -139,8 +192,17 @@ function DebtForm({ onAdd }: DebtFormProps) {
             step="0.01"
             placeholder="25.00"
             required
-            className={inputClass}
+            aria-invalid={errors.minPayment !== undefined}
+            aria-describedby={
+              errors.minPayment ? "form-min-payment-error" : undefined
+            }
+            className={errors.minPayment ? errorInputClass : inputClass}
           />
+          {errors.minPayment && (
+            <p id="form-min-payment-error" className={errorTextClass}>
+              {errors.minPayment}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex gap-3">
@@ -153,7 +215,10 @@ function DebtForm({ onAdd }: DebtFormProps) {
         </button>
         <button
           type="button"
-          onClick={() => setForm(EMPTY_FORM)}
+          onClick={() => {
+            setForm(EMPTY_FORM);
+            setErrors({});
+          }}
           disabled={submitting}
           className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50"
         >
