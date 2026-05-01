@@ -26,7 +26,7 @@ jobs:
 
       # mongodb-memory-server downloads a Mongo binary on first use. Cache it
       # so v5-backend's supertest suite doesn't re-download every run.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         if: matrix.app == 'v5-backend'
         with:
           path: ~/.cache/mongodb-binaries
