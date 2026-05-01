@@ -1,62 +1,26 @@
 version: 2
 updates:
-  # One entry per app folder. v1-vanilla has no package.json so no entry.
+  # One npm entry covers all four app folders via the `directories`
+  # array. v1-vanilla has no package.json so it's not listed.
   #
-  # Two groups per app:
+  # Two groups:
   #   - lint-stack bundles eslint, @eslint/js, typescript-eslint, and
-  #     @typescript-eslint/* into one PR for any update type. The members
-  #     have peer dependencies on each other; bumping eslint without
-  #     bumping typescript-eslint to a compatible release fails npm install.
-  #     Bundling means the upgrade either works for all members or surfaces
-  #     a single failed PR instead of four scattered ones.
-  #   - minor-and-patch catches everything else's minor and patch bumps
-  #     in one weekly PR per app. Major bumps outside the lint stack
-  #     still come through as their own PRs because they often need a
-  #     code change to merge cleanly.
+  #     @typescript-eslint/* into one PR for any update type. The
+  #     members have peer dependencies on each other; bumping eslint
+  #     without bumping typescript-eslint to a compatible release
+  #     fails npm install. Bundling means the upgrade either works
+  #     for all members or surfaces a single failed PR instead of
+  #     four scattered ones.
+  #   - minor-and-patch catches everything else's minor and patch
+  #     bumps in one weekly PR per app. Major bumps outside the lint
+  #     stack still come through as their own PRs because they often
+  #     need a code change to merge cleanly.
   - package-ecosystem: npm
-    directory: /v2-react
-    schedule:
-      interval: weekly
-    groups:
-      lint-stack:
-        patterns:
-          - "eslint"
-          - "@eslint/*"
-          - "typescript-eslint"
-          - "@typescript-eslint/*"
-      minor-and-patch:
-        update-types: [minor, patch]
-
-  - package-ecosystem: npm
-    directory: /v3-typescript
-    schedule:
-      interval: weekly
-    groups:
-      lint-stack:
-        patterns:
-          - "eslint"
-          - "@eslint/*"
-          - "typescript-eslint"
-          - "@typescript-eslint/*"
-      minor-and-patch:
-        update-types: [minor, patch]
-
-  - package-ecosystem: npm
-    directory: /v4-tailwind
-    schedule:
-      interval: weekly
-    groups:
-      lint-stack:
-        patterns:
-          - "eslint"
-          - "@eslint/*"
-          - "typescript-eslint"
-          - "@typescript-eslint/*"
-      minor-and-patch:
-        update-types: [minor, patch]
-
-  - package-ecosystem: npm
-    directory: /v5-backend
+    directories:
+      - /v2-react
+      - /v3-typescript
+      - /v4-tailwind
+      - /v5-backend
     schedule:
       interval: weekly
     groups:
