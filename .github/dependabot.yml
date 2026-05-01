@@ -1,15 +1,29 @@
 version: 2
 updates:
-  # One entry per app folder. v1-vanilla has no package.json so no
-  # entry. Minor and patch updates are grouped into a single weekly
-  # PR per app rather than one PR per package, which would flood the
-  # PR queue. Major bumps still come through as their own PRs because
-  # they often need a code change to merge cleanly.
+  # One entry per app folder. v1-vanilla has no package.json so no entry.
+  #
+  # Two groups per app:
+  #   - lint-stack bundles eslint, @eslint/js, typescript-eslint, and
+  #     @typescript-eslint/* into one PR for any update type. The members
+  #     have peer dependencies on each other; bumping eslint without
+  #     bumping typescript-eslint to a compatible release fails npm install.
+  #     Bundling means the upgrade either works for all members or surfaces
+  #     a single failed PR instead of four scattered ones.
+  #   - minor-and-patch catches everything else's minor and patch bumps
+  #     in one weekly PR per app. Major bumps outside the lint stack
+  #     still come through as their own PRs because they often need a
+  #     code change to merge cleanly.
   - package-ecosystem: npm
     directory: /v2-react
     schedule:
       interval: weekly
     groups:
+      lint-stack:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
       minor-and-patch:
         update-types: [minor, patch]
 
@@ -18,6 +32,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      lint-stack:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
       minor-and-patch:
         update-types: [minor, patch]
 
@@ -26,6 +46,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      lint-stack:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
       minor-and-patch:
         update-types: [minor, patch]
 
@@ -34,6 +60,12 @@ updates:
     schedule:
       interval: weekly
     groups:
+      lint-stack:
+        patterns:
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
       minor-and-patch:
         update-types: [minor, patch]
 
